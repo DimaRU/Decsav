@@ -1,0 +1,594 @@
+.INCLUDE /DECDFN/
+.MODULE DECDATA,RELEASE=V05,VERSION=10,COMMENT=<ОБЩИЕ ДАННЫЕ>
+
+	.NLIST	BEX
+............................................................
+;
+; ДАННЫЕ И ТАБЛИЦЫ
+;
+............................................................
+	.PSECT	DECDAT,D
+TABLLO::
+CURLIN::.BLKB	200.	; ТЕКСТОВЫЙ БУФЕР
+CMDLIN::.BLKB	80.	; СТРОКА ВНУТРЕННЕЙ КОМАНДЫ
+CSISTR::.BLKB	80.	; СТРОКА CSI, СЧИТАННАЯ С ТЕРМИНАЛА
+
+LINEND::.BLKW	1	; УКАЗАТЕЛЬ "ПОСЛЕ КОНЦА СТРОКИ" ДЛЯ CURLIN
+DECSP::	.BLKW	1	; DECCHD SP
+CMDSP::	.BLKW	1	; СОХР. SP УРОВНЯ CMD
+C.SUBR::.BLKW	1	; П/П ДЕКОДИРОВАНИЯ #,WORD,BYTE(ТЕКУЩАЯ КОМАНДА)
+R.SUBR::.BLKW	1	; П/П ДЕКОДИРОВАНИЯ #,WORD,BYTE(ПОСТОЯННО)
+NOINTF::.BLKW	1	; ЗАПРЕЩЕНО ДЕКОДИРОВАНИЕ #
+NOLABF::.BLKW	1	; ФЛАГ ЗАПРЕЩЕНИЯ ПРОСТАНОВКИ МЕТОК ДЛЯ @#X, @X, X
+STREAM::.BLKW	1	; НОМЕР СЕГМЕНТА, КУДА ПОПАДЕТ ЛОК. СИМВОЛ (LS)
+N.STRM::.BLKW	1	; НОМЕР МЕТКИ, НА КОТ. ВОЗД. C.STRM
+C.STRM::.BLKW	1	; STREAM ТОЛЬКО ДЛЯ МЕТКИ N.STRM
+L.STRM::.BLKW	1	; STREAM ТОЛЬКО ДЛЯ TEK. СТРОКИ
+R.STRM::.BLKW	1	; ТЕКУЩИЙ STREAM ДЛЯ ВСЕХ СТРОК
+CURLC::	.BLKW	1	; LOCATION COUNTER (LC)
+MACLC::	.BLKW	1	; LC НАЧАЛА ТЕКУЩЕЙ СТРОКИ
+CURWRD::.BLKW	1	; ПОСЛЕДНЕЕ СЧИТАННОЕ СЛОВО
+CURBYT::.BLKW	1	; ПОСЛЕДНИЙ СЧИТАННЫЙ БАЙТ
+LINBYT::.BLKB	L.B.SZ	; ЗНАЧЕНИЯ ДЕК. БАЙТОВ
+D.PASS::.BLKW	1	; НОМЕР ПРОХОДА
+LABTYP::.BLKW	1	; ТИП МЕТКИ
+L.LLBK::.BLKW	1	; РАЗМЕР ЭЛЕМЕНТА LL
+L.LSBK::.BLKW	1	; РАЗМЕР ЭЛЕМЕНТА LS
+L.TXBK::.BLKW	1	; РАЗМЕР ЭЛЕМЕНТА TXT
+L.GLBK::.BLKW	1	; РАЗМЕР ЭЛЕМЕНТА GLB TXT
+R.BASE::.BLKW	2	; БАЗА СМЕЩЕНИЯ
+CURINS::.BLKW	1	; ТЕКУЩАЯ ИНСTРУКЦИЯ (СЛОВО)
+LABLC:: .BLKW	1	; LC СТРОКИ ПРИ ПРОСТАНОВКЕ МЕТОК (DECLAB)
+I.LEN::	.BLKW	1	; ДЛИНА ОБ'ЕКТА НА ТРЕТЬЕМ ПРОХОДЕ
+L.B.PN::.BLKW	1	; УКАЗАТЕЛЬ НА LINBYT
+L.R.PN::.BLKW	1	; УКАЗАТЕЛЬ НА LABREF
+R.T.PN::.BLKW	1	; УКАЗАТЕЛЬ НА REFTYP
+R.S.PN::.BLKW	1	; УКАЗАТЕЛЬ НА REFSTM
+LABREF::.BLKW	L.R.SZ	; АДРЕСА ССЫЛОК
+REFTYP::.BLKB	L.R.SZ	; ТИП ССЫЛОК
+REFSTM::.BLKB	L.R.SZ	; СЕГМЕНТ МЕТКИ
+BRKRSN::.BLKW	1	; ТИП ПОИСКА
+OLDRSN::.BLKW	1	; СОХР. BRKRSN
+INFORM::.BLKW	1	; БИТЫ ИНФОРМАЦИИ ДЛЯ ПОИСКА
+REFLC::	.BLKW	1	; АДРЕС ССЫЛКИ ДЛЯ ПОИСКА
+TGTWRD::.BLKW	1	; ОБРАЗЕЦ ДЛЯ ПОИСКА СЛОВА
+TGTBYT::.BLKW	1	; ОБРАЗЕЦ ДЛЯ ПОИСКА БАЙТА
+TGTINS::.BLKW	1	; ОБРАЗЕЦ ДЛЯ ПОИСКА ИНСТРУКЦИИ
+INSPOS::.BLKW	1	; АДРЕС ИНСТРУКЦИИ В ТАБЛИЦЕ
+OFFSET::.BLKW	1	; СМЕЩЕНИЕ ДЛЯ OFFS
+EN.ARG::.BLKW	1	; НОМЕР ПРЕОБРАЗОВАНИЯ В СТРОКЕ
+NUMLS::	.BLKW	1	; ЧИСЛО LS В СТРОКЕ
+CVTLIM::.BLKW	1	;+++
+CURCMT::.BLKW	1	; ТЕК. АДРЕС СТРОКИ КОММЕНТАРИЯ
+BRSET::	.BLKW	1	; БЫЛИ ПЕРЕНАЗНАЧЕНЫ BCS,BCC
+TYPINS::.BLKW	1	; ТИП ИНСТР. ДЛЯ ПЕРЕКОДИРОВКИ
+LSTTYP::.BLKW	1	; ПРЕД. TYPINS
+DIAVER::.BLKW	1	; НОМЕР ВЕРСИИ ФАЙЛА ДИАЛОГА
+CONFIG::.BLKW	1	; ТИП ПРОЦЕССОРА
+CTXFLG::.BLKW	1	; ФЛАГ ДЛЯ LINTRN
+CNFFLG::.BLKW	1	; ФЛАГ ИЗМЕНЕНИЯ ТИПА ПРОЦЕССОРА
+TTYFLG::.BLKW	1	; ФЛАГ ВЫВОДА НА ТЕРМИНАЛ
+BRKFLG::.BLKW	1	; ФЛАГ ДИАЛОГА
+LDAFLG::.BLKW	1	; ФЛАГ ДЕКОДИРОВАНИЯ .LDA
+SGDSWT::.BLKW	1	; ФЛАГ ПРИНУДИТЕЛЬНОГО ВВОДА SGD С ТЕРМИНАЛА
+SGDFLG::.BLKW	1	; ФЛАГ ВВОДА SGD ИЗ ФАЙЛА
+PARSWT::.BLKW	1	; БИТЫ ПАРАМЕТРА ДЕКОДИРОВАНИЯ
+PARSAV::.BLKW	1	; БИТЫ ПАРАМЕТРА ДЕКОДИРОВАНИЯ( ДЛЯ СОХРАНЕНИЯ)
+COMSWT::.BLKW	1	; БИТЫ ОПРЕДЕЛЕНИЯ СОДЕРЖИМОГО ЛИСТИНГА
+BLCNT::	.BLKW	1	; СЧЕТЧИК .BLKB
+DSTFLG::.BLKW	1	; ФЛАГ DST
+.IF	DF,$CODE
+$MFLAG::.BLKW	1	; ФЛАГ РАСКОД. СООБЩ.
+.$FLAD::.BLKW	1
+.ENDC
+$INLIN::.BLKW	1	; ФЛАГ НЕЗАКРЫТОЙ СТРОКИ .ASCII
+DELIM::	.BLKW	1	; СИМВОЛ - РАЗДЕЛИТЕЛЬ .ASCII
+ENDCHR::.BLKW	1	; ЗАВЕРШАЮЩИЙ СИМВОЛ .ASCII
+STACHR::.BLKW	1	; СТАРТОВЫЙ СИМВОЛ .ASCII
+CHRLIM::.BLKW	1	; МАХ. ДЛИНА СТРОКИ
+CHRCNT::.BLKW	1	; СЧЕТЧИК СИМОЛОВ .ASCII
+BLKB::	.BLKW	1	; ФЛАГИ ОБРАБОТКИ .BLKB
+BLKB1::	.BLKW	1
+CVTBUF::.BLKB	20.	; БУФФЕР ДЛЯ ДВОИЧНО - ВОСЬМЕРИЧНОГО ПР.
+R50NAM::.BLKW	2	; ВЫХОДНОЙ БУФЕР ДЛЯ ПРЕОБР. ASCII - RAD50
+MEMBLK::.BLKW	1	; НОМЕР БЛОКА, НАХОДЯЩЕГОСЯ В ПАМЯТИ
+OVRCNT::.BLKW	1	; КОЛИЧЕСТВО СЕГМЕНТОВ В ЗАДАЧЕ
+OVRNUM::.BLKW	1	; НОМЕР ОВЕРЛЕЯ ДЛЯ ДЕКОДИРОВАНИЯ
+OVROFS::.BLKW	1	; СМЕЩЕНИЕ В ФАЙЛЕ ДО ТАБЛИЦЫ ОВЕРЛЕЕВ
+SEGBLK::.BLKW	1	; НОМЕР БЛОКА НАЧАЛА ТЕКУЩЕГО СЕГМЕНТА
+SEGBAS::.BLKW	1	; АДРЕС НАЧАЛА ТЕКУЩЕГО СЕГМЕНТА
+SEGNAM::.BLKW	2	; ИМЯ СЕГМЕНТА
+SEGLST::.BLKW	1	; УКАЗАТЕЛЬ СПИСКА СЕГМЕНТОВ
+SEGFLG::.BLKW	1	; ФЛАГ ТИПА СЕГМЕНТА
+LABSEG::.BLKW	1	; УКАЗАТЕЛЬ НА БЛОК СЕГМЕНТА МЕТКИ
+CURSEG::.BLKW	1	; УКАЗАТЕЛЬ НА БЛОК ТЕKУЩЕГО СЕГМЕНТА
+CURSGN::.BLKW	1	; НОМЕР ТЕКУЩЕГО СЕГМЕНТА
+S.LDA::	.BLKW	1	; СТАРТОВЫЙ АДРЕС .LDA - МОДУЛЯ
+L.LDA::	.BLKW	1	; НИЖНИЙ АДРЕС LDA - МОДУЛЯ
+H.LDA::	.BLKW	1	; ВЕРХНИЙ АДРЕС LDA - МОДУЛЯ
+S.JSW::	.BLKW	1	; JSW ПРОГРАММЫ
+S.ADDR::.BLKW	1	; СТАРТОВЫЙ АДРЕС
+H.ADDR::.BLKW	1	; АДРЕС КОНЦА ДЕКОДИРОВАНИЯ
+L.ADDR::.BLKW	1	; АДРЕС НАЧАЛА ДЕКОДИРОВАНИЯ
+H.LAB::	.BLKW	1	; ВЕРХНИЙ ДОПУСТИМЫЙ АДРЕС ДЛЯ МЕТОК
+L.LAB::	.BLKW	1	; НИЖНИЙ ДОПУСТИМЫЙ АДРЕС ДЛЯ МЕТОК
+ROOTL::	.BLKW	1	; НИЖНИЙ АДРЕС КОРНЕВОГО СЕГМЕНТА
+ROOTH::	.BLKW	1	; ВЕРХНИЙ АДРЕС КОРНЕВОГО СЕГМЕНТА
+RCLBEG::.BLKW	1	;
+RCLEND::.BLKW	1	;
+RCLTBL::.BLKW	1	;
+
+CURCMD::.BLKW	1	; АДРЕС ТЕКУЩЕЙ КОМАНДЫ
+MODCMD::.BLKW	1	; СПИСОК МОДИФИЦИРУЮЩИХ КОМАНД - АДРЕС СЛЕД. ЭЛЕМ.
+SETCMD::.BLKW	1	; СПИСОК КОМАНД УСТАНОВКИ - АДРЕС СЛЕД. ЭЛЕМ.
+
+M.C.SV::.BLKW	1	; СОХР. MODCMD
+S.C.SV::.BLKW	1	; СОХР. SETCMD
+LSBPNT::.BLKW	1	; УКАЗАТЕЛЬ НА СПИСОК LSB
+LLPNT::	.BLKW	1	; УКАЗАТЕЛЬ НА СПИСОК LL
+LSPNT::	.BLKW	1	; УКАЗАТЕЛЬ НА СПИСОК LS
+GLBPNT::.BLKW	1	; УКАЗАТЕЛЬ НА СПИСОК ГЛОБАЛЬНЫХ МЕТОК
+TXTPNТ::.BLKW	1	; УКАЗАТЕЛЬ НА СПИСОК ТЕКСТОВЫХ МЕТОК
+
+LLPN1::	.BLKW	1	; УКАЗАТЕЛЬ НА СПИСОК LL (INSLAB)
+LSPN1::	.BLKW	1	; УКАЗАТЕЛЬ НА СПИСОК LS (INSLAB)
+GLBPN1::.BLKW	1	; УКАЗАТЕЛЬ НА СПИСОК ГЛОБАЛЬНЫХ ТЕКСТОВЫХ МЕТОК
+TXTPN1::.BLKW	1	; УКАЗАТЕЛЬ НА СПИСОК ТЕКСТОВЫХ МЕТОК (INSLAB)
+
+CURBRK::.BLKW	1	; ФЛАГ ПРЕРЫВАНИЯ НА ДИАЛОГ
+OLDBRK::.BLKW	1	; ПРЕДЫДУЩИЙ CURBRK
+SV.INS::.BLKW	5	; БЛОК СОХРАНЕНИЯ ДЛЯ ПРЕД. ИНСТРУКЦИЙ
+MCRBUF::.BLKW	1	; АДРЕС БУФЕРА ДЛЯ MACRO
+MCBEND::.BLKW	1	; АДРЕС КОНЦА БУФЕРА MACRO
+MCRPNT::.BLKW	1	; УКАЗАТЕЛЬ В БУФЕРЕ MACRO
+MCREND::.BLKW	1	; АДРЕС КОНЦА ОПРЕДЕЛЕННОГО MACRO
+MCRFLG::.BLKW	1	; ФЛАГ ВЫПОЛНЕНИЯ/ЗАПИСИ MACRO
+MCRCNT::.BLKW	1	; СЧЕТЧИК ВЫПОЛНЕНИЯ MACRO
+
+TABLHI::
+;
+; ПАМЯТЬ РАСПРЕДЕЛЯЕТСЯ ОТ НАИМЕНЬШЕГО АДРЕСА К БОЛЬШЕМУ
+;
+LOCORE::.BLKW	1	; НИЖНЯЯ ГРАНИЦА ПАМЯТИ ДЛЯ ТАБЛИЦ
+HICORE::.BLKW	1	; ВЕРХНЯЯ ГРАНИЦА ПАМЯТИ ДЛЯ ТАБЛИЦ
+CURMEL::.BLKW	1	; УКАЗАТЕЛЬ НА СВОБ. ОБЛАСТЬ ПАМЯТИ LO
+CURMEH::.BLKW	1	; УКАЗАТЕЛЬ НА СВОБ. ОБЛАСТЬ ПАМЯТИ HI
+
+............................................................
+;
+; ОПРЕДЕЛЕНИЕ КОМАНД ДЕКОДЕРА
+;
+............................................................
+
+	.PSECT	CMDFLG,D,RO
+CMDFLG::
+	.PSECT	DECDAT
+
+.MACRO	CMD	MNEM	FLAGS=0,NAME=NONE,GLOBAL=NO
+...NUM=...NUM+1
+ .SAVE
+	.PSECT	CMDFLG
+ .=CMDFLG+<...NUM*2>
+	.WORD	FLAGS
+ .RESTORE
+	.ASCIZ	<...NUM>/MNEM/
+.IF	DIF,NAME,NONE
+	NAME==:...NUM
+.ENDC
+.ENDM	CMD
+
+.MACRO	SYN	MNEM
+	.ASCIZ	<...NUM>/MNEM/
+.ENDM	SYN
+
+...NUM=-1
+
+C.MN.T::
+
+ CMD	INS	FLAGS=M.NARG		NAME=CM.INS
+  SYN	I
+ CMD	WRD	FLAGS=M.NUM
+  SYN	W
+ CMD	BYT	FLAGS=M.NUM
+  SYN	B
+ CMD	ASC	FLAGS=M.NARG
+  SYN	A
+ CMD	ASN	FLAGS=M.NARG		NAME=CM.ASN
+ CMD	RAD	FLAGS=M.NUM
+  SYN	R
+ CMD	LAB	FLAGS=M.NUM
+  SYN	L
+ CMD	RLW	FLAGS=M.LAB
+ CMD	RLB	FLAGS=M.LAB
+ CMD	DRS	FLAGS=M.NARG
+
+ CMD	<D#>	FLAGS=M.NARG		NAME=CM.SET
+  SYN	<N#>
+ CMD	<E#>	FLAGS=M.NARG
+ CMD	DISLAB	FLAGS=M.NARG
+  SYN	DL
+ CMD	ENLAB	FLAGS=M.NARG
+  SYN	EL
+
+ CMD	<^N>	FLAGS=CVTPRM!M.PARM	NAME=CM.CVT
+ CMD	<^O>	FLAGS=CVTPRM!M.PARM
+ CMD	<^D>	FLAGS=CVTPRM!M.PARM
+ CMD	<^B>	FLAGS=CVTPRM!M.PARM
+ CMD	<^R>	FLAGS=CVTPRM!M.PARM
+ CMD	<^C>	FLAGS=CVTPRM!M.PARM
+ CMD	<'>	FLAGS=CVTPRM!M.PARM
+ CMD	<">	FLAGS=CVTPRM!M.PARM
+ CMD	<^.>	FLAGS=CVTPRM!M.PARM
+ CMD	<^!>	FLAGS=CVTPRM!M.PARM
+ CMD	ASET
+ CMD	ALEN
+  SYN	LN
+ CMD	ENABL	FLAGS=ENPARM!M.PARM
+  SYN	EN
+ CMD	DISABL	FLAGS=ENPARM!M.PARM
+  SYN	DS
+ CMD	ENDCHR
+ CMD	BEGCHR
+ CMD	DELIM
+ CMD	BASE	FLAGS=M.LAB
+ CMD	OFFS	FLAGS=M.LAB
+ CMD	MODE
+ CMD	ONLY	FLAGS=M.NUM
+  SYN	ONL
+ CMD	<;>	FLAGS=M.CMT	NAME=CM.CMT
+ CMD	STREAM
+  SYN	STM
+
+ CMD	LIST	FLAGS=M.NARG	NAME=CM.WRK
+  SYN	LI
+  SYN	</<32>/>	; CTRL/Z
+ CMD	FIND	FLAGS=FPARM!M.PARM
+  SYN	F
+ CMD	CONT	FLAGS=M.NARG
+  SYN	C
+ CMD	<^>	FLAGS=M.NARG
+  SYN	</<12>/>	; LF
+  SYN	</<33>/>	; ESC
+ CMD	BEGIN	FLAGS=M.NARG
+  SYN	BEG
+ CMD	GOTO	FLAGS=M.LAB
+  SYN	G
+ CMD	DELCMD	FLAGS=M.NARG
+  SYN	DC
+ CMD	LB	FLAGS=M.RAD
+  SYN	IL
+ CMD	INSREF	FLAGS=M.RAD
+  SYN	IR
+  SYN	REF
+ CMD	COM	FLAGS=CPARM!M.PARM
+ CMD	EXIT	FLAGS=M.NARG
+ CMD	QUIT	FLAGS=M.NARG
+ CMD	MACRO	FLAGS=M.NARG
+ CMD	MEND	FLAGS=M.NARG
+  SYN	ENDM
+ CMD	EXEC	FLAGS=M.NUM
+  SYN	EM
+ CMD	SHOW	FLAGS=SHPARM!M.PARM
+  SYN	SH
+ CMD	MARK	FLAGS=M.NARG
+ CMD	GMARK	FLAGS=M.NARG
+ CMD	NAME	FLAGS=M.RAD
+ CMD	SEGMENT	FLAGS=M.NUM
+  SYN	SEG
+.IF	NE,RSX11$
+ CMD	PAUSE	FLAGS=M.NARG
+.ENDC
+	.BYTE	-1	; КОНЕЦ ТАБЛИЦЫ
+	.EVEN
+
+
+; ТАБЛИЦА СИМВОЛИЧЕСКИХ ПАРАМЕТРОВ КОМАНД
+
+.MACRO	PARM	MNEM	VALUE	FLAGS=0	NAME=NONE
+	.WORD	VALUE
+	.WORD	FLAGS
+	.ASCIZ	/MNEM/
+	.EVEN
+.IF	DIF,NAME,NONE
+	NAME==:VALUE
+.ENDC
+.ENDM	PARM
+
+.MACRO	ENDTAB
+	.WORD	0,0,-1
+.ENDM	ENDTAB
+
+
+; ТЕМЫ ПОИСКА
+FPARM:
+	PARM	EOF	0	FLAGS=M.NARG
+	PARM	REF	1	FLAGS=M.LAB
+	PARM	DINT	2	FLAGS=M.NARG
+	PARM	BADAD	3	FLAGS=M.NARG
+	PARM	ODDAD	4	FLAGS=M.NARG
+	PARM	LINS	5	FLAGS=M.NARG
+	PARM	BYTE	6
+	PARM	WORD	7
+	PARM	INS	8.	FLAGS=M.RAD
+	ENDTAB
+
+; ТЕМЫ SHOW
+SHPARM:
+	PARM	EXT	0	FLAGS=M.NARG	NAME=SH.EXT
+	PARM	FREE	1	FLAGS=M.NARG	NAME=SH.MEM
+	PARM	MEM	1	FLAGS=M.NARG
+	PARM	SEG	2	FLAGS=M.NARG	NAME=SH.SEG
+	PARM	PARM	3	FLAGS=M.NARG	NAME=SH.PARM
+;	PARM	MACRO	4	FLAGS=M.NARG
+;	PARM	CMD	5	FLAGS=M.NARG
+	ENDTAB
+CVTPRM:
+	PARM	SET	200	FLAGS=M.NARG	NAME=CP.SET
+	ENDTAB
+CPARM:
+	PARM	LC	C.LC				FLAGS=M.NEXT
+	PARM	WRD	C.WRD				FLAGS=M.NEXT
+	PARM	ASC	C.ASC				FLAGS=M.NEXT
+	PARM	RAD	C.RAD				FLAGS=M.NEXT
+	PARM	CMT	C.CMT				FLAGS=M.NEXT
+	PARM	FUL	C.LC+C.WRD+C.ASC+C.RAD+C.CMT	FLAGS=M.NEXT
+	PARM	ALL	C.LC+C.WRD+C.ASC+C.RAD+C.CMT	FLAGS=M.NEXT
+	PARM	NORAD	C.LC+C.WRD+C.ASC+C.CMT		FLAGS=M.NEXT
+	PARM	ASM	C.LC+C.WRD+C.CMT		FLAGS=M.NEXT
+	PARM	NUL	0				FLAGS=M.NEXT
+	ENDTAB
+
+ENPARM:
+	PARM	ASB	L.ASB	FLAGS=M.NEXT
+	PARM	SIG	L.SIG	FLAGS=M.NEXT
+	PARM	BI8	L.BI8	FLAGS=M.NEXT
+	PARM	BIT8	L.BI8	FLAGS=M.NEXT
+	PARM	EXT	L.EXT	FLAGS=M.NEXT
+	PARM	ALL	-1	FLAGS=M.NEXT
+	PARM	NUL	0	FLAGS=M.NEXT
+	ENDTAB
+
+P.MN.T::
+	PARM	SET	200
+	PARM	NONE	-1
+	PARM	NON	-1
+	PARM	<ESC>	33
+	PARM	<CR>	15
+	PARM	<LF>	12
+	PARM	<FF>	14
+	PARM	<HT>	11
+	ENDTAB
+.IF	DF,$CODE	; КОДИРОВАТЬ
+
+.MACRO	CHRTB	STRING
+	.SAVE
+	.PSECT	$$$TAB
+CHRTAB::
+	.IRPC	...CHR,<STRING>
+	.BYTE	^C<''...CHR-$CONST>
+	.ENDR
+	.EVEN
+	.RESTORE
+.ENDM	CHRTB
+
+.MACRO	CMSG	MESSAG,STRING
+.NCHR	..LSTR,<STRING>
+.NCHR	..LMSG,<MESSAG>
+MSGLEN==0
+	CHRTB	<STRING>
+CODMSG::
+...CNT=0
+...VAL=0
+.IRPC	...CHR,<MESSAG>
+	...NUM=0
+.IRPC	..SCHR,<STRING>
+.IIF	EQ,<''...CHR-''..SCHR>	.MEXIT
+	...NUM=...NUM+1
+.ENDR
+.IIF	EQ,<..LSTR-...NUM>	.ERROR	; '...CHR - СИМВОЛ НЕ НАЙДЕН В STRING
+	...VAL=<...VAL*50>+...NUM
+	...CNT=...CNT+1
+.IF	EQ,<...CNT-3>
+	.WORD	...VAL
+MSGLEN==MSGLEN+1
+	...VAL=0
+	...CNT=0
+.ENDC
+.ENDR
+
+.IF	NE,...CNT
+.REPT	<3-...CNT>
+	...VAL=...VAL*50
+.ENDR
+	.WORD	...VAL
+MSGLEN==MSGLEN+1
+.ENDC
+.ENDM	CMSG
+
+.IF	DF,D$SAV
+CMSG <DECSAV V05.00 , БОРОВИКОВ Д.М., МГТУ, МИПК>,< 0123456789ABCDEJOSV.,-АБВДИКЛМОРТУ>
+.IFF
+CMSG <DECTSK V05.00 , БОРОВИКОВ Д.М., МГТУ, МИПК>,< 0123456789ABCDEJKST.,-АБВДИКЛМОРТУ>
+.ENDC
+
+.ENDC
+DC.INS::.WORD	1,0,CM.INS,0
+CCS::	.ASCII	/NZVC/
+RADTXT::.ASCIZ	/.RAD50/<200><11><'/>
+ASCTXT::.ASCIZ	/.ASCII/<200><11>
+BYTXT:: .ASCIZ	/.BYTE/<200><200><11>
+WOTXT:: .ASCIZ	/.WORD/<200><200><11>
+BLTXT:: .ASCIZ	/.BLKB/<200><200><11>
+ENLSB:: .ASCIZ	/.ENABL/<11>/LSB/
+DSLSB:: .ASCIZ	/.DSABL/<11>/LSB/
+ENDTXT::.ASCIZ	<11>/.END/<11>/START/
+MKTXT::	.ASCIZ	/,MARK/
+MS.MEM::.ASCIZ	/СВОБОДНО ПАМЯТИ (БАЙТ) :/
+TSGL::	.ASCIZ	/; СПИСОК СЕГМЕНТОВ/
+DRSTXT::.ASCIZ	"-400>/2,"
+
+	.EVEN
+; ОПРЕДЕЛЕНИЕ ФЛАГОВ КОМАНД ДЕКОДЕРА
+M.PARM	==	1	; В КОМАНДЕ ДАЛЕЕ СЛЕДУЕТ СИМВОЛИЧЕСКОЕ ИМЯ
+M.NARG	==	2	; ЗАКОНЧИТЬ РАЗБОР КОМАНДЫ, БОЛЬШЕ АРГ. НЕТ
+M.NEXT	==	4	; СЛЕД. ПАРАМЕТР ИЗ ТОЙ ЖЕ ТАБЛИЦЫ
+M.LAB	==     10	; ЧИСЛО ИЛИ СИМВ. МЕТКА ИЛИ ".", ЗАКОНЧИТЬ ТРАНСЛ.
+M.RAD	==     20	; СИМВ. ИМЯ, ПЕРЕВЕСТИ В RAD50
+M.CMT	==     40	; КОМАНДА - КОММЕНТАРИЙ, ВСЕ ПЕРЕПИСАТЬ В КОМАНДУ
+M.NUM	==    100	; ТОЛЬКО ЧИСЛО, ЗАКОНЧИТЬ ТРАНСЛ.
+
+;      ОПРЕДЕЛЕНИЕ БИТОВ PARSWT
+
+L.LST	==	1	; РАСПЕЧАТЫВАТЬ .ASECT, .=XXXXX
+L.CAL	==	2	; ЗАМЕНЯТЬ JSR PC НА CALL,RTS PC НА RETURN
+L.ODD	==	4	; РАЗР. ДЕКОД. СЛОВНЫХ ИНСТР. С НЕЧЕТНЫМ ИСП. АДР.
+L.SHR	==     10	; ВЫВОД "КОРОТКИХ" ЛОК. СИМВ.
+L.SIG	==     20	; ВЫВОДИТЬ КОНСТ. СO ЗНАКОМ
+L.NUM	==     40	; ПОСЛЕДОВ. НУМЕРАЦИЯ МЕТОК(LL,LS)
+L.ASB	==    100	; ВЫВОДИТЬ MOVB #'A,XXX
+L.BI8	==    200	; ИСПОЛЬЗОВАТЬ 8-BIT ASCII
+L.LOC	==    400	; НУМЕРАЦИЯ LOCAL 1 1
+L.EXT	==   1000	; РЕГИСТРИРОВАТЬ МЕТКИ БЕЗ ПРОВЕРКИ АДРЕСА(REL,ABS @#)
+L.MEM	==   2000	; ЭКОНОМ. РЕЖИМ ПАМ. : МЕТКИ ХР. ТОЛЬКО ДЛЯ ТЕК. ОВЕР.
+L.CRF	==   4000	; ВЫВОДИТЬ СПИСОК ПЕРЕКРЕСТНЫХ ССЫЛОК
+;L.	==  10000
+;L.	==  20000
+;L.	==  40000
+;L.	== 100000
+
+;	ОПРЕДЕЛЕНИЕ БИТОВ COMSWT
+
+C.LC	==	1	; ВЫВОДИТЬ LC
+C.WRD	==	2	; ВЫВОДИТЬ ВОСМЕРИЧНЫЙ АНАЛОГ (СЛОВА)
+C.ASC	==	4	; ВЫВОДИТТЬ СИМВОЛЬНЫЙ АНАЛОГ (.ASCII)
+C.RAD	==     10	; ВЫВОДИТЬ АНАЛОГ .RAD50
+C.CMT	==     20	; ВЫВОДИТЬ КОММЕНТРИЙ, ВВЕД. КОМАНДОЙ <;>
+
+;	ОПРЕДЕЛЕНИЕ ПОЗИЦИЙ КОММЕНТАРИЯ
+
+LC.COL	==	32.
+ASC.COL ==	57.
+RAD.COL ==	66.
+
+;	ОПРЕДЕЛЕНИЕ СМЕЩЕНИЙ В СПИСКЕ CMD
+
+C$LINK	==	0
+C$LC	==	2
+C$CMD	==	4
+C$NUM	==	5
+C$PARM	==	6
+
+;	ОПРЕДЕЛЕНИЕ СМЕЩЕНИЙ В БЛОКЕ СОХРАНЕНИЯ СОСТОЯНИЙ
+
+B.BEG	==:	0
+B.CUR	==:	2
+B.END	==:	4
+B.CNT	==:	6
+B.LEN	==:	10
+
+..............................................................................
+;
+;	ОПРЕДЕЛЕНИЕ БИТОВ INFOR
+;
+..............................................................................
+
+N.DINT	==:	 1	; РАСКРЫТИЕ НЕПОСРЕДСТВ. АДРЕСАЦИИ В (PC)+
+N.BAD	==:	 2	; ПРИМЕНЕНИЕ АДРЕСАЦИИ PC, (PC), -(PC), @-(PC)
+N.ODD	==:	 4	; СЛОВНАЯ ИНСТР. С НЕЧЕТ. ИСПОЛН. АДРЕСОМ
+..............................................................................
+;
+;	ОПРЕДЕЛЕНИЕ ТИПОВ МЕТОК (LABTYP)
+;
+..............................................................................
+
+LT.DAT	==:	0	; МЕТКА ПРИ ДАННЫХ	    D,E
+LT.LAB	==:	1	; ОСТАЛЬНЫЕ МЕТКИ	    L,M
+LT.JMP	==:	2	; МЕТКА JMP		    J,K
+LT.JSR	==:	3	; МЕТКА ПОДПРОГРАММЫ (JSR)  S,T
+LT.MAX	==:	3
+LT.GLB	==:	4	; ГЛОБАЛЬНАЯ МЕТКА
+
+............................................................
+;
+;	ФОРМАТ СПИСКА СЕГМЕНТОВ ЗАДАЧИ
+;
+............................................................
+.REM	/
+
+SEGLST: - ЗАГОЛОВОК
+
+O$LINK	LINK
+O$SBLK	SEGBLK
+O$SBAS	SEGBAS
+O$LOW	LOW ADDR
+O$HIGH	HI ADDR
+O$LLAB	L.LAB
+O$HLAB	H.LAB
+O$NAME 	NAME OF SEGM (2 СЛОВА)
+O$SLEV	ГЛУБИНА ВЛОЖЕННОСТИ ОВЕРЛЕЙНОГО СЕГМЕНТА(1 БАЙТ)
+O$SFLG	ФЛАГ СЕГМЕНТА(1 БАЙТ)
+O$MCMD	СОХР. M.C.CMD
+O$SCMD	СОХР. S.C.CMD
+O$LL	СОХР. LSPNT
+O$LS	СОХР. LLPNT
+O$TXT	СОХР. TXTPNT
+O$GLB	СОХР. GLBPNT
+O$NLS	НАЧАЛЬНЫЕ НОМЕРА МЕТОК ДЛЯ LS
+O$MACL  ТЕКУЩИЙ LC СЕГМЕНТА
+O$MARK  ОТМЕТКА В СЕГМЕНТЕ (MARK)
+O$LEN	РАЗМЕР БЛОКА СЕГМЕНТА
+
+/
+...LC=0
+
+.MACRO	BLSS	NAME	WORDS=1
+	NAME	==:	...LC
+...LC=...LC+<WORDS*2>
+.ENDM	BLSS
+
+.MACRO	BLSSB	NAME	BYTES=1
+	NAME	==:	...LC
+...LC=...LC+BYTES
+.ENDM	BLSSB
+
+	BLSS	O$LINK
+	BLSS	O$SBLK
+	BLSS	O$SBAS
+	BLSS	O$LOW
+	BLSS	O$HIGH
+	BLSS	O$LLAB
+	BLSS	O$HLAB
+	BLSS	O$NAME,2
+	BLSSB	O$SLEV
+	BLSSB	O$SFLG
+	BLSS	O$MCMD
+	BLSS	O$SCMD
+	BLSS	O$LL
+	BLSS	O$LS
+	BLSS	O$TXT
+	BLSS	O$GLB
+	BLSS	O$NLS,LT.MAX+1
+	BLSS	O$MACL
+	BLSS	O$MARK
+;	BLSS	O$EMT
+	BLSS	O$LEN
+
+..............................................................................
+;
+;	ОПРЕДЕЛЕНИЕ МЕНЕМОНИКИ МЕТОК
+;
+..............................................................................
+LBMNEM::
+	.BYTE	'D	; DATA
+	.BYTE	'L	; ОСТАЛЬНЫЕ
+	.BYTE	'J	; ССЫЛКА ПО JMP
+	.BYTE	'S	; МЕТКА П/П. (ССЫЛКА ПО JSR,CALL)
+GLMNEM::
+	.BYTE	'G	; GLOBAL DATA
+	.BYTE	'I	; GLOBAL LABEL
+	.BYTE	'A	; GLOBAL JMP
+	.BYTE	'O	; GLOBAL JSR
+..............................................................................
+	.EVEN
+
+	.END

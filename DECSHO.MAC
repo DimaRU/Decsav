@@ -1,0 +1,158 @@
+.INCLUDE /DECDFN/
+.MODULE DECSHO,RELEASE=V05,VERSION=02,COMMENT=<ВЫВОД ПАРМЕТРОВ>
+
+	.PSECT	DECSHO,I,RO
+DECSHO::
+	TSTB	CMDBUF+C$NUM
+	BEQ	FREE
+	CMP	CMDBUF+C$PARM,#SH.EXT
+	BNE	1$
+	CALLR	SHOEXT
+1$:	CMP	CMDBUF+C$PARM,#SH.SEG
+	BNE	FREE
+	CALLR	SHOSEG
+FREE:
+	MOV	#CURLIN,R2
+	MOV	#MS.MEM,R0
+	CALL	MOVTXT
+	MOV	CURMEH,R0
+	SUB	CURMEL,R0
+	CALL	DCONV
+	CALL	MOVTXT
+	CALLR	WR$LIN
+
+............................................................
+;
+;П/П ВЫВОДА МЕТОК, ВЫХОДЯЩИХ ЗА ГРАНИЦУ ТЕКСТА
+;
+............................................................
+SHOEXT::
+	MOV	CURSGN,STREAM
+	MOV	CURSEG,LABSEG
+	MOV	#LSPNT,R1
+1$:	MOV	@R1,R1
+	BEQ	3$
+	MOV	2(R1),R0
+	CMP	R0,L.ADDR
+	BLO	2$
+	CMP	R0,H.ADDR
+	BLO	1$
+
+2$:	MOV	#CURLIN,R2
+	CALL	OUTLS
+	MOVB	#'=,(R2)+
+	MOVB	#11,(R2)+
+	MOV	2(R1),R0
+	CALL	OCONV
+	CALL	MOVTXT
+	CALL	WR$LIN
+	BR	1$
+
+3$:	MOV	#TXTPNT,R1
+	CALL	OUTTXT
+	MOV	#GLBPNT,R1
+	CALL	OUTTXT
+	TST	BRKFLG
+	BNE	4$
+
+	MOV	#CURLIN,R2
+	MOVB	#200,(R2)+	; ВЫВЕСТИ ПУСТУЮ СТРОКУ
+	CALLR	OUT$LIN
+4$:	RETURN
+
+OUTTXT:
+1$:	MOV	@R1,R1
+	BEQ	3$		; КОНЕЦ СПИСКА
+	MOV	2(R1),R0	; АДРЕС ОПРЕДЕЛЕНИЯ МЕТКИ
+	CMP	R0,L.ADDR	; ВХОДИТЬ В ПРОСТРАНСТВО МЕТОК?
+	BLO	2$		; НЕТ, НЕ ВХОДИТ
+	CMP	R0,H.ADDR
+	BLO	1$		; ВХОДИТ, ПРОДОЛЖИМ ПОИСК
+
+2$:	MOV	#CURLIN,R0
+	CMP	(R1)+,(R1)+	; НА ИМЯ
+	CALL	R50ASC		; ПРЕОБР. В ASCII
+	MOV	R0,R2
+	CALL	DELSP		; УДАЛИТЬ ЛИШНИЕ ПРОБЕЛЫ
+	MOVB	#11,(R2)+
+	MOVB	#'=,(R2)+
+	MOVB	#11,(R2)+
+	MOV	-(R1),R0	; ЗНАЧЕНИЕ МЕТКИ
+	CALL	OCONV		; ПРЕОБРАЗОВАТЬ В ASCII
+	CALL	MOVTXT		; ПЕРЕСЛАТЬ В СТРОКУ
+	CALL	WR$LIN		; ВЫВЕСТИ СТРОКУ
+	TST	-(R1)
+	BR	1$		; ПРОДОЛЖИТЬ ПОИСК
+3$:	RETURN
+............................................................
+;
+; П/П ВЫВОДА СПИСКА СЕГМЕНТОВ
+;
+............................................................
+SHOSEG::
+	JSR	R1,$SAVE5
+	MOV	#TSGL,R0
+	MOV	#CURLIN,R2
+	CALL	MOVTXT
+	CALL	WR$LIN
+	MOV	#SEGLST,R5
+	
+	CLR	R4		; СЧЕТЧИК НОМЕРА СЕГМЕНТА
+
+1$:	MOV	@R5,R5
+	BEQ	4$
+	MOV	#CURLIN,R2
+	MOV	#"; ,(R2)+
+	MOVB	#40,(R2)+
+	CMP	R4,CURSGN	; ТЕКУЩИЙ НОМЕР СЕГМЕНТА?
+	BNE	10$		; НЕТ
+	MOVB	#'*,-1(R2)	; ОТМЕТИТЬ ТЕКУЩИЙ СЕГМЕНТ
+10$:	MOV	R4,R0		; НОМЕР ВЫВОДИМОГО СЕГМЕНТА
+	CALL	FDCONV		; ПРЕОБРАЗОВАТЬ В ASCII
+	ADD	#3,R0		; ИСПОЛЬЗОВАТЬ 2 ПОСЛ. СИМВОЛА
+	CMPB	@R0,#'0
+	BNE	11$
+	MOVB	#40,@R0		; ПОДАВИТЬ ВЕДУЩИЕ НУЛИ
+11$:	CALL	MOVTXT
+	MOVB	#40,(R2)+	; ОТДЕЛИТЬ ПРОБЕЛОМ
+	MOV	O$SBLK(R5),R0	; BASE BLOCK
+	CALL	FOCONV
+	CALL	MOVTXT
+	MOVB	#',,(R2)+
+	MOV	O$SBAS(R5),R0	; BASE ADDR
+	CALL	FOCONV
+	CALL	MOVTXT
+	MOVB	#':,(R2)+
+	MOVB	#40,(R2)+
+	MOV	O$LOW(R5),R0	; LOW ADDR
+	CALL	FOCONV
+	CALL	MOVTXT
+	MOVB	#'-,(R2)+
+	MOV	O$HIGH(R5),R0	; HIGH ADDR
+	CALL	FOCONV
+	CALL	MOVTXT
+	MOVB	#',,(R2)+
+	MOV	O$LLAB(R5),R0	; L.LAB ADDR
+	CALL	FOCONV
+	CALL	MOVTXT
+	MOVB	#'-,(R2)+
+	MOV	O$HLAB(R5),R0	; H.LAB ADDR
+	CALL	FOCONV
+	CALL	MOVTXT
+	MOVB	#40,(R2)+
+	MOVB	O$SLEV(R5),R0	; НОМЕР СЕГМЕНТА
+	BEQ	3$
+2$:	MOVB	#40,(R2)+
+	MOVB	#40,(R2)+
+	SOB	R0,2$
+3$:	MOV	R5,R1
+	ADD	#O$NAME,R1
+	MOV	R2,R0
+	CALL	R50ASC
+	MOV	R0,R2
+	CALL	WR$LIN
+	INC	R4
+	BR	1$
+4$:	RETURN
+
+	.END

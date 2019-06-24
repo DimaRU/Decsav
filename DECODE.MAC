@@ -1,0 +1,1578 @@
+.INCLUDE /DECDFN/
+.MODULE DECODE,RELEASE=V05,VERSION=17,COMMENT=<ДЕКОДИРОВАНИЕ>
+
+	.PSECT	DECODE,D,RO
+
+............................................................
+
+; ДЕКОДИРОВАНИЕ КОМАНД
+............................................................
+DECODE::
+	CMP	CURLC,H.ADDR
+	BLO	4$
+	TST	D.PASS		; 1,2 ПРОХОДЫ - КОНЕЦ
+	BLE	1$
+	TST	BRKFLG
+	BNE	2$
+1$:	RETURN
+2$:	CALL	ENDPRT
+	MOV	#SV.INS,R0	; ВОЗВРАТИТЬСЯ НА ИНСТР. НАЗАД, ЕСЛИ КОНЕЦ
+	CALL	GT.B.P
+	MOV	@R0,R0
+	CALL	RESLIN
+	TST	CURBRK
+	BGT	3$
+	MOV	CURBRK,OLDBRK	; СОХРАНИМ ФЛАГ
+3$:	MOV	SP,CURBRK	; УСТАНОВИМ ФЛАГ ДИАЛОГА
+	CLR	MCRFLG		; СБРОСИМ ФЛАГ MACRO
+
+4$:	CALL	SAVSP		; СОХРАНИТЬ СТЕК
+	CLR	NOINTF
+	CLR	NOLABF
+	CLR	OFFSET
+	CLR	CURCMT
+	MOV	#-1,EN.ARG
+	MOV	CHRLIM,CHRCNT
+
+	MOV	R.SUBR,C.SUBR	; УСТАНОВИТЬ СТАНДAРТНОЕ ПРЕОБРАЗОВАНИЕ
+	MOV	R.STRM,L.STRM	; УСТАНОВИТЬ STREAM ДЛЯ СТРОКИ
+	MOV	#-1,N.STRM	; ДЛЯ ОДИНОЧНОЙ МЕТКИ
+	MOV	TYPINS,LSTTYP	; СОХРАНИТЬ ПРЕД. ТИП ИНСТР.
+	CLR	TYPINS
+
+5$:	MOV	SETCMD,R5	; СПИСОК КОМАНД ТИПА SET
+	BEQ	6$		; КОНЕЦ СПИСКА
+	CMP	C$LC(R5),MACLC
+	BHI	6$
+	MOV	@R5,SETCMD	; ПРОДВИНУТЬ СПИСОК
+	MOVB	C$CMD(R5),R0
+	CMPB	R0,#-1		; УДАЛЕННАЯ КОМАНДА?
+	BEQ	5$		; ДА
+	ASL	R0
+	CALL	@$CMDTB(R0)	; ОБРАБОТАТЬ КОМАНДУ ТИПА SET
+	BR	5$
+6$:	CALL	SETUP		; НАЧАЛЬНАЯ УСТАНОВКА СТРОКИ
+
+	MOV	MODCMD,R5	; СПИСОК КОМАНД ТИПА MOD
+	BEQ	7$		; КОНЕЦ СПИСКА
+	CMP	C$LC(R5),MACLC	; КОМАНДА К ТЕКУЩЕЙ СТРОКЕ?
+	BNE	7$		; НЕТ
+	MOV	@R5,MODCMD	; ПРОДВИНУТЬ СПИСОК
+	MOV	R5,CURCMD	; ТЕКУЩАЯ КОМАНДА MOD
+
+7$:	MOV	CURCMD,R5	; АДРЕС КОМАНДЫ
+	MOVB	C$CMD(R5),R0	; НОМЕР КОМАНДЫ
+	ASL	R0		; ИНДЕКС КОМАНДЫ
+8$:	CALL	@$CMDTB(R0)	; ОБРАБОТАТЬ КОМАНДУ
+	TST	D.PASS		; ДИАЛОГ ТОЛЬКО НА ТРЕТЬЕМ ПРОХОДЕ
+	BLE	9$		; 1,2 ПРОХОДЫ
+	TST	BRKFLG		; ДИАЛОГ?
+	BNE	10$		; ДА
+
+9$:	CALL	PUT$LIN		; ВЫВЕСТИ СТРОКУ
+; ОБРАБОТАТЬ LSB
+	MOV	LSBPNT,R0	; 9$
+	BEQ	29$		; ПУСТОЙ СПИСОК
+	CMP	2(R0),MACLC	; МАРКЕР ПОДХОДИТ?
+	BNE	29$		; НЕТ
+;	CMP	2(R0),CURLC	; +++TEST - МАРКЕР ПОДХОДИТ?
+;	BHIS	29$		; +++TEST - НЕТ
+	MOV	@R0,LSBPNT	; УДАЛИТЬ ЭЛ-Т
+;+++
+; УСТАНОВИТЬ НОВЫЙ БЛОК ЛОКАЛЬНЫХ СИМВОЛОВ
+;---
+	MOV	R2,-(SP)
+	MOV	#7,R0
+	MOV	#CURLIN,R2
+21$:	MOV	(R2)+,-(SP)
+	SOB	R0,21$
+	MOV	R2,-(SP)
+	MOV	#CURLIN,R2
+	MOV	#DSLSB,R0
+	CALL	MOVTXT
+	CALL	OUT$LIN
+	MOV	#CURLIN,R2
+	MOV	#ENLSB,R0
+	CALL	MOVTXT
+	CALL	OUT$LIN
+	MOV	LLPN1,LLPNT	; ПЕРЕУСТАНОВИТЬ НУМЕРАЦИЮ
+	MOV	#7,R0
+	MOV	(SP)+,R2
+22$:	MOV	(SP)+,-(R2)
+	SOB	R0,22$
+	MOV	(SP)+,R2
+
+29$:	BR	11$
+
+;29$:	CALL	PUT$LIN		; ВЫВЕСТИ СТРОКУ
+;	BR	11$
+
+10$:	CALL	TSTBRK		; ПРОВЕРИТЬ УСЛОВИЯ ПРЕРЫВАНИЯ НА ДИАЛОГ
+	TST	CURBRK		; СЕКЦИЯ НАХОДИТСЯ В ДИАЛОГЕ?
+	BMI	11$		; ВЫКЛЮЧЕНА СОВСЕМ
+	BEQ	9$		; ВЫВОД СТРОКИ НА ТЕРМИНАЛ
+	CALL	DIAL		; ПОГОВОРИМ
+	BCC	12$		; НОВЫЙ КОНТЕКСТ
+
+11$:	MOV	#SV.INS,R0
+	CALL	PT.B.P
+	MOV	MACLC,@R0
+	MOV	CURLC,MACLC	; ПРОДВИНУТЬ MACLC
+12$:	JMP	DECODE		; ПРОДОЛЖИМ
+	.PSECT	DECDAT,D
+
+$CMDTB: 			; ТАБЛИЦА АДРЕСОВ КОМАНД
+	.WORD	DECINS		; - ИНСТРУКЦИИ
+	.WORD	DECWRD		; - ДЕКОД. СЛОВАМИ
+	.WORD	DECBYT		; - ДЕКОД. БАЙТАМИ
+	.WORD	DECASC		; - .ASCII
+	.WORD	DECASC		; - .ASCII С СЧЕТЧИКОМ БАЙТОВ
+	.WORD	DECRAD		; - .RAD50
+	.WORD	DECLAB		; - LABEL
+	.WORD	DECRLW		; - ADD XXX,PC UP
+	.WORD	DECRLB		; - RELOCATE BYTE
+	.WORD	DECDRS		; - .DRSET ROUTINE ADDR
+
+	.WORD	I$NO		; - NO #
+	.WORD	I$YES		; - YES #
+	.WORD	L$NO		; - ЗАПРЕТИТЬ МЕТКИ
+	.WORD	L$YES		; - РАЗРЕШИТЬ МЕТКИ
+	.WORD	I$SET		; - ^N
+	.WORD	I$SET		; - ^O
+	.WORD	I$SET		; - ^D
+	.WORD	I$SET		; - ^B
+	.WORD	I$SET		; - ^R
+	.WORD	I$SET		; - ^C
+	.WORD	I$SET		; - '
+	.WORD	I$SET		; - "
+	.WORD	I$SET		; RECLOCATE CURRENT PC
+	.WORD	I$SET		; - ^! - ПЕРЕМЕЩЕНИЕ ПО БАЗЕ
+	.WORD	ASCSET		; - УСТАНОВКА ПАРАМ. ASCII
+	.WORD	ASCLEN		; - УСТАНОВКА ДЛИНЫ ASCII - ДЛЯ СОВМ. С ПРЕД.
+	.WORD	E$PAR		; - ENABL
+	.WORD	D$PAR		; - DISABL
+	.WORD	SENDCH		; - ENDCHR
+	.WORD	SBEGCHR		; - BEGCHR
+	.WORD	SDELIM		; - DELIM
+	.WORD	SBASE		; - УСТАНОВКА REL.BASE
+	.WORD	SOFFS		; - OFFS
+	.WORD	SMODE		; - MODE (ДЛЯ RLB)
+	.WORD	ONLY		; - ONLY (ДЛЯ КОМАНД CVT,OFFS)
+	.WORD	SETCMT		; - SET COMMENT
+	.WORD	CMSTRM		; - STREAM
+
+
+; АДРЕСА П/П ПРЕОБРАЗОВАНИЙ ДЛЯ BYTE,WORD,#
+
+;		DEFLT	OCTAL	DEC	BIN	RAD50	COMPL	'	"
+INTRTR:	.WORD	DEFINT,	CVTOCT,	CVTDEC,	CVTBIN,	CVTRAD,	CVTCOM,	CVTASC,	CVTWAS,	CVTRPC,	CVTBAS
+OFFRTR:	.WORD	DEFOFF,	CVTOCT,	CVTDEC,	CVTBIN,	CVTOCT,	CVTOCT,	CVTOCT,	CVTOCT,	CVTRPC,	CVTBAS
+WRDRTR:	.WORD	DEFWRD,	CVTOCT,	CVTDEC,	CVTBIN,	CVTRAD,	CVTCOM,	CVTASC,	CVTWAS,	CVTRPC,	CVTBAS
+BYTRTR:	.WORD	CVTOCT,	CVTOCT,	CVTDEC,	CVTBIN,	CVTOCT,	CVTCMB,	CVTASC,	CVTOCT,	CVTOCT,	CVTOCT
+
+	.PSECT	DECODE,D,RO
+
+I$NO:	MOV	SP,NOINTF	; ЗАПРЕТИТЬ #
+	RETURN
+I$YES:	CLR	NOINTF
+	RETURN
+L$NO:	MOV	SP,NOLABF	; ЗАПРЕТИТЬ ОБРАЗОВАНИЕ МЕТОК ДЛЯ @#X ,@X, X
+	RETURN
+L$YES:	CLR	NOLABF		; ОТМЕНИТЬ ЗАПРЕЩЕНИЕ
+	RETURN
+;
+; КОМАНДЫ УСТАНОВКИ ТИПА ДЕКОДИРОВАНИЯ BYTE,WORD,#
+;
+I$SET:
+	MOVB	C$CMD(R5),R0
+	SUB	#CM.CVT,R0
+	ASL	R0
+SETCVT:	MOV	R0,C.SUBR
+	TSTB	C$NUM(R5)
+	BEQ	1$
+	CMP	C$PARM(R5),#CP.SET
+	BNE	1$
+	MOV	R0,R.SUBR
+1$:	RETURN
+;
+; КОМАНДЫ СБРОСА/УСТАНОВКИ ПАРАМЕТРОВ
+;
+E$PAR:	CALL	GETBIT
+	BIC	#^C<L.ASB!L.SIG!L.BI8!L.EXT>,R0
+	BIS	R0,PARSWT
+	RETURN
+D$PAR:	CALL	GETBIT
+	BIC	#^C<L.ASB!L.SIG!L.BI8!L.EXT>,R0
+	BIC	R0,PARSWT
+	RETURN
+GETBIT::
+	CLR	R0
+	MOVB	C$NUM(R5),R1
+	BEQ	1$
+	MOV	R5,R2
+	ADD	#C$PARM,R2
+2$:	BIS	(R2)+,R0
+	SOB	R1,2$
+1$:	RETURN
+............................................................
+;
+; УСТАНОВКА ПАРАМЕТРОВ ASCII
+;
+............................................................
+ASCSET:
+	MOVB	C$NUM(R5),R0	; ЕСТЬ ДОП. СЛОВА?
+	BEQ	3$		; НЕТ, ЗАКОНЧИМ
+	TST	C$PARM(R5)	; ПУСТОЙ АРГ.?
+	BMI	1$		; ДА, ПРОПУСТИТЬ
+	MOV	C$PARM(R5),DELIM
+1$:	DECB	R0
+	BEQ	3$
+	TST	C$PARM+2(R5)	; ПУСТОЙ АРГ.?
+	BMI	2$
+	MOV	C$PARM+2(R5),ENDCHR
+2$:	DECB	R0
+	BEQ	3$
+	TST	C$PARM+4(R5) 	; ПУСТОЙ АРГ.?
+	BMI	3$
+	MOV	C$PARM+4(R5),STACHR
+3$:	RETURN
+............................................................
+;
+; ПАРАМЕТРЫ .ASCII
+;
+............................................................
+.ENABL	LSB
+SENDCH:
+	MOV	#ENDCHR,R0
+	BR	1$
+SBEGCH:
+	MOV	#STACHR,R0
+	BR	1$
+SDELIM:	MOV	#DELIM,R0
+1$:	TSTB	C$NUM(R5)
+	BEQ	2$
+	MOV	C$PARM(R5),@R0
+2$:	RETURN
+.DSABL	LSB
+............................................................
+;
+; УСТАНОВКА ДЛИНЫ ASCII
+;
+............................................................
+ASCLEN:
+	MOVB	C$NUM(R5),R0
+	BNE	1$		; ЕСТЬ ДОП. СЛОВ
+	MOV	#60.,CHRCNT	; ПО УМОЛЧАНИЮ
+	BR	2$
+1$:	MOV	C$PARM(R5),CHRCNT ; ВРЕМЕННО
+	DEC	R0
+	BEQ	3$
+	CMP	C$PARM+2(R5),#CP.SET
+	BNE	3$
+2$:	MOV	CHRCNT,CHRLIM	; МАХ. ДЛИНА СТРОКИ ПОСТОЯННО
+3$:	RETURN
+............................................................
+;
+; УСТАНОВКА БАЗЫ СМЕЩЕНИЯ
+;
+............................................................
+SBASE::
+	TSTB	C$NUM(R5)
+	BEQ	1$
+	MOV	C$PARM(R5),R.BASE
+1$:	RETURN
+............................................................
+;
+; УСТАНОВКА СМЕЩЕНИЯ ДЛЯ ПЕРЕМЕЩЕНИЯ МЕТОК LS
+;
+............................................................
+SOFFS::
+	TST	C$NUM(R5)
+	BEQ	1$
+	MOV	C$PARM(R5),OFFSET
+	RETURN
+1$:	CLR	OFFSET
+	RETURN
+............................................................
+;
+; УСТАНОВКА MODE EXTEND/TRUNCATE SIGN ДЛЯ КОМАНДЫ RLB
+;
+............................................................
+SMODE::
+	CMPB	C$NUM(R5),#1
+	BNE	1$
+	MOV	C$PARM(R5),R.BASE+2
+1$:	RETURN
+............................................................
+;
+;  РАЗРЕШЕНИЕ ИСПОЛЬЗОВАНИЯ КОМАНД (SETCVT,OFFS) 
+;  ДЛЯ ОДНОГО АРГУМЕНТА
+;
+............................................................
+ONLY::
+	CLR	EN.ARG
+	TSTB	C$NUM(R5)
+	BEQ	1$
+	MOV	C$PARM(R5),EN.ARG
+1$:	DEC	EN.ARG
+	RETURN
+............................................................
+;
+; УСТАНОВКА СТРОКИ КОММЕНТАРИЯ
+;
+............................................................
+SETCMT::
+	MOV	CURCMT,R0
+	BEQ	1$
+	MOVB	#-1,C$CMD(R0)	; ПОМЕТИТЬ ПРЕД. КОМАНДУ НЕ СУЩ.
+1$:	MOV	R5,CURCMT
+	RETURN
+............................................................
+;
+; УСТАНОВКА СЕГМЕНТА, КУДА ПОПАДЕТ МЕТКА
+;
+............................................................
+CMSTRM::
+	CMPB	C$NUM(R5),#2	; ЧИСЛО АРГУМЕНТОВ У КОМАНДЫ
+	BHIS	3$		; >= 2
+	TSTB	C$NUM(R5)
+	BNE	1$		; ЧИСЛО АРГУМЕНТОВ = 1
+; STREAM = STREAM:DEF
+	MOV	CURSGN,L.STRM	; УСТАНОВИТЬ STREAM ДЛЯ ТОЛЬКО ДЛЯ ТЕК. СТРОКИ
+	RETURN
+; STREAM:SEG ! STREAM:SET
+1$:	CMP	C$PARM(R5),#CP.SET	; КОМАНДА STREAM:SET ?
+	BNE	2$
+	MOV	CURSGN,R.STRM	; УСТАНОВИТЬ ТЕК. СЕГМЕНТ ДЛЯ ВСЕХ СТРОК
+	MOV	CURSGN,L.STRM
+	RETURN
+2$:	CMP	C$PARM(R5),OVRCNT
+	BHI	5$		; ОШИБОЧНЫЙ НОМЕР СЕГМЕНТА
+	MOV	C$PARM(R5),L.STRM	; УСТАНОВИТЬ STREAM ДЛЯ ТЕК. СТРОКИ
+	RETURN
+; STREAM:SEG:NNN ! STREAM:SEG:SET
+3$:	CMP	C$PARM(R5),OVRCNT
+	BHI	5$		; ОШИБОЧНЫЙ НОМЕР СЕГМЕНТА
+	CMP	C$PARM+2(R5),#CP.SET	; КОМАНДА STREAM:SEG:SET ?
+	BNE	4$		; НЕТ
+	MOV	C$PARM(R5),R.STRM ; УСТАНОВИТЬ ТЕК. СЕГМЕНТ ДЛЯ ВСЕХ СТРОК
+	MOV	C$PARM(R5),L.STRM
+	RETURN
+4$:	MOV	C$PARM(R5),C.STRM
+	MOV	C$PARM+2(R5),N.STRM
+5$:	RETURN
+............................................................
+;
+; ОБРАБОТКА НОМЕРА СЕГМЕНТА (STREAM) ДЛЯ СЛЕД. МЕТКИ
+;
+............................................................
+NXTSTM::
+	INC	NUMLS		; СЛЕД. МЕТКА БУДЕТ С НОМЕРОМ NUMLS
+	MOV	L.STRM,STREAM	; STREAM ДЛЯ ВСЕЙ ТЕК. СТРОКИ
+	CMP	NUMLS,N.STRM	; СОВП. С НОМЕРОМ ДЛЯ ОДНОЙ МЕТКИ?
+	BNE	1$		; НЕТ
+	MOV	C.STRM,STREAM	; ВРЕМЕННЫЙ STREAM ДЛЯ ОДНОЙ МЕТКИ
+; ВЫЧИСЛИТЬ LABSEG ДЛЯ СЛЕД. МЕТКИ
+1$:	MOV	CURSEG,LABSEG
+	CMP	CURSGN,STREAM
+	BEQ	2$
+	MOV	R1,-(SP)
+	MOV	STREAM,R1
+	MUL	#O$LEN,R1
+	ADD	SEGLST,R1
+	MOV	R1,LABSEG	; БЛОК СЕГМЕНТА ДЛЯ СЛЕД. МЕТКИ
+	MOV	(SP)+,R1
+2$:	RETURN
+............................................................
+;
+; КОМАНДА INS - ДЕКОДИРОВАНИЕ ИНСТРУКЦИЙ
+;
+............................................................
+DECINS:
+	CALL	BEGLIN
+	CALL	GETWRD
+	BCC	1$
+	JMP	INVOP
+
+1$:	MOV	R0,CURINS
+	CLR	DSTFLG		; ФЛАГ DST
+	TST	BRSET		; БЫЛИ ПЕРЕНАЗНАЧЕНЫ КОМАНДЫ BCC,BCS?
+	BEQ	8$
+	CLR	I.BLO		; ЗАПРЕТИТЬ РАСПОЗНАВАНИЕ BLO,BHIS
+	CLR	I.BHIS
+	MOV	#BAS$,I.BCC	; РЕЗРЕШИТЬ BCS,BCC
+	MOV	#BAS$,I.BCS
+	CLR	BRSET
+8$:	BIT	#$BRSET,LSTTYP	; ПЕРEНАЗНАЧАТЬ BCS,BCC? - В ПРЕД. КОМАНДЕ
+	BEQ	9$
+	MOV	#BAS$,I.BLO	; РАЗРЕШИТЬ РАСПОЗНАВАНИЕ BLO,BHIS
+	MOV	#BAS$,I.BHIS
+	CLR	I.BCS		; ЗАПРЕТИТЬ BCS,BCC
+	CLR	I.BCC
+	INC	BRSET
+9$:
+
+.IF	DF,$CODE
+	TST	$MFLAG
+	BNE	SRH
+	ADD	#2,$CMDTB
+.ENDC
+SRH:	MOV	CURINS,R0	; ЗАГРУЗИТЬ СЛОВО ИНСТР.
+	BEQ	INVOP		; HALT - НЕ ДЕКОДИРУЕСЯ
+	BMI	SECNDT		; ЕСЛИ - , ВТОРАЯ ТАБЛИЦА
+
+	MOV	#TABL1,R3
+	CALL	SRHCOD		; ИЩЕМ ИНСТРУКЦИЮ,ЕСЛИ НАЙДЕНА - УХОД НА П/П ДЕКОД.
+; НЕ НАШЛИ В ПЕРВОЙ ТАБЛИЦЕ,ПРОВЕРИМ ДРУГИЕ
+	BIT	#CIS$,CONFIG
+	BEQ	CCODES
+	MOV	#CISTBL,R3
+	CALL	SRHCOD
+; НЕ НАЙДЕНА В TABL1,CISTBL,ПОПРОБУЕМ НА CC - ИНСТР.
+CCODES:
+	CMP	R0,#240
+	BLE	INVOP
+	CMP	R0,#300
+	BGE	INVOP
+	CMP	R0,#260
+	BEQ	INVOP
+	BIT	#20,R0
+	BNE	1$
+	MOVB	#'C,R3
+	MOVB	#'L,R4
+	BR	2$
+1$:	MOVB	#'S,R3
+	MOVB	#'E,R4
+2$:	BIC	#177760,R0
+	CMP	R0,#17
+	BNE	3$
+	MOVB	R3,(R2)+
+	MOVB	#'C,(R2)+
+	MOVB	#'C,(R2)+
+	RETURN
+3$:	CLR	-(SP)
+	MOV	#1,R1		; БИТ ДЛЯ ТЕСТИРОВАНИЯ
+	MOV	#4,R5		; СЧЕТЧИК ПОВТОРЕНИЙ
+4$:	BIT	R1,R0
+	BEQ	7$
+	CMP	@SP,#1
+	BLT	6$
+	BGT	5$
+	MOVB	-(R2),-(SP)	; ЗАГРУЗИТЬ ИНСТР. В СТЕК
+	MOVB	-(R2),-(SP)
+	MOVB	-(R2),-(SP)
+	MOV	R0,-(SP)
+	MOV	#WOTXT,R0
+	CALL	MOVTXT
+	MOV	(SP)+,R0
+	MOVB	(SP)+,(R2)+	; ПЕРЕПИСАТЬ ОБРАТНО
+	MOVB	(SP)+,(R2)+
+	MOVB	(SP)+,(R2)+
+5$:	MOVB	#'!,(R2)+
+6$:	MOVB	R3,(R2)+
+	MOVB	R4,(R2)+
+	MOVB	CCS-1(R5),(R2)+
+	INC	@SP
+7$:	ASL	R1
+	SOB	R5,4$
+	TST	(SP)+
+	RETURN
+
+INVOP:	MOV	CURCMD,R5	; ВОССТАНОВИТЬ R5
+	CALL	SETUP
+	JMP	OPWRD		; ИНТЕРПРЕТИРОВАТЬ КАК СЛОВО НЕ ДЕКОД. ИНСТР.
+
+; ОБАБОТКА ВТОРОЙ ТАБЛИЦЫ
+SECNDT:
+	MOV	#TABL2,R3
+	CALL	SRHCOD
+; НЕ НАШЛИ - ПОПРОБУЕМ FPU - ИНСТР.
+	BIT	#FPU$,CONFIG
+	BEQ	INVOP
+	MOV	#FPUTBL,R3
+	CALL	SRHCOD
+	BR	INVOP		; НЕ НАШЛИ
+............................................................
+;
+; SRHCOD - ПОИСК В ТАБЛИЦЕ ИНСТРУКЦИЙ КОДА OP
+; НА ВХОДЕ: R0 = КОД КОМАНДЫ
+;	    R2 -> ВЫХОДНАЯ СТРОКА
+;	    R3 -> ТАБЛИЦА КОДОВ ОПЕРАЦИЙ
+; НА ВЫХОДЕ: ПРЕДАТЬ УПРАВЛЕНИЕ П/П ДЕКОД. ОПЕРАНДОВ,ЕСЛИ НАЙДЕНА
+;	     ВОЗВРАТ,ЕСЛИ НЕ НАЙДЕНА
+;  R4- ИСПОЛЬЗУЮТСЯ
+............................................................
+SRHCOD:
+	MOV	(R3)+,R4	; КОЛИЧЕСТВО КОДОВ В ТАБЛИЦЕ
+1$:	BIT	CONFIG,(R3)+	; ВХОДИТ В КОНФИГУРАЦИЮ ПРОЦЕССОРА?
+	BEQ	3$		; НЕТ
+	MOV	R0,R5		; СКОПИРОВАТЬ КОД ИНСТР.
+	BIC	(R3)+,R5	; СБРОСИТЬ ЛИШНИЕ БИТЫ
+	CMP	(R3),R5 	; СРАВНИТЬ КОДЫ
+	BEQ	4$		; НАШЛИ!
+2$:	ADD	#10.,R3
+	SOB	R4,1$
+	RETURN			; КОД НЕ НАЙДЕН
+3$:	ADD	#12.,R3
+	SOB	R4,1$
+	RETURN			; КОД НЕ НАЙДЕН
+
+4$:	CMP	-(R3),-(R3)
+	MOV	R3,INSPOS	; СОХРАНИТЬ ПОЗИЦИЮ ИНСТР. В ТАБЛИЦЕ
+	ADD	#6,R3		; ПРОПУСТИТЬ ЛИШНЕЕ
+	MOVB	(R3)+,TYPINS	; ВЗЯТЬ ДОПОЛНИТЕЛЬНЫЙ ТИП ИНСТР.
+	MOVB	(R3)+,R4	; НОМЕР П/П ОБРАБОТКИ ОПЕРАНДОВ
+	MOV	(R3)+,(R2)+	; ПЕРЕПИСАТЬ МНЕМОНИКУ В ТАБЛИЦУ
+	MOV	(R3)+,(R2)+
+	MOV	(R3)+,(R2)+
+	MOV	(PC)+,(R2)+	; НА СЛЕД. ПОЗИЦИЮ ТАБУЛЯЦИИ
+	.BYTE	200,11
+;
+; ОПРЕДЕЛЕНИЕ ТИПА МЕТКИ
+;
+	MOV	#LT.DAT,LABTYP	; ТИП МЕТКИ -DATA
+;
+; ИНСТР. ПЕРЕДАЧИ УПРАВЛЕНИЯ?
+;
+	BIT	#$JSRLT,TYPINS	; ТИП МЕТКИ -SUBROUTINE?
+	BEQ	5$		; НЕТ
+	MOV	#LT.JSR,LABTYP	; ДА, ПОМЕТИТЬ
+	BR	6$
+5$:	CMP	INSPOS,#I.JMP	; ИНСТР. JMP?
+	BNE	6$
+	MOV	#LT.JMP,LABTYP	; ТИП МЕТКИ -JMP
+6$:	TST	(SP)+		; УДАЛИТЬ АДРЕС ВОЗВРАТА
+	ASL	R4		; ПОЛУЧИТЬ ИНДЕКС
+	JMP	@ARGTBL(R4)	; ПЕРЕЙТИ НА П/П  ОБРАБ. ОПЕРАНДОВ
+............................................................
+;
+; ДЕКОДИРОВАНИЕ В ВИДЕ .ASCII
+;
+............................................................
+DECASC:
+	CALL	GETBYT
+	TSTB	R0
+	BEQ	1$		; 0 - ВЫДАТЬ КАК БАЙТ
+	CMPB	R0,#200		; НЕ ASCII - ВЫДАТЬ КАК БАЙТ
+	BLOS	2$
+	BIT	#L.BI8,PARSWT	; РАЗРЕШЕНО ДЕКОДИРОВАНИЕ 8-БИТ ASCII
+	BEQ	1$		; НЕТ
+	CMPB	R0,#377
+	BEQ	1$
+	CMP	R0,#277
+	BHIS	2$
+1$:	CALL	SETUP
+	JMP	OPBYT
+
+2$:	CALL	BEGLIN
+	MOV	#ASCTXT,R0	; .ASCII
+	CALL	MOVTXT
+	MOV	CURBYT,R0	; ВОССТАНОВИТЬ R0
+	CMPB	C$CMD(R5),#CM.ASN
+	BNE	4$
+	MOV	R0,CHRCNT
+	INC	CHRCNT
+	MOVB	#'<,(R2)+
+	BR	NONASC		; ОФОРМИТЬ СЧЕТЧИК В ВИДЕ <>
+4$:	MOVB	DELIM,(R2)+
+	CLR	$INLIN		; ФЛАГ ЗАПОЛНЕНИЯ
+.ENABL	LSB
+DECAS1:
+	CMPB	R0,DELIM	; РАЗДЕЛИТЕЛЬ?
+	BEQ	1$		; ДА, НЕ ВКЛ. В СТРОКУ, ОФОРМИТЬ <>
+	CMPB	R0,#177 	; 177,200
+	BEQ	1$		; ОФОРМИТЬ <>
+	CMPB	R0,#200
+	BEQ	1$		; ОФОРМИТЬ <>
+	CMPB	R0,#40		; CTRL
+	BLO	1$		; ОФОРМИТЬ <>
+	MOVB	R0,(R2)+	; ЗАСЛАТЬ СИМВОЛ
+	MOV	#1,$INLIN	; ВОШЛИ В СТРОКУ
+	BR	6$
+
+1$:	TST	$INLIN		; В СТРОКЕ ПРИСУТСВУЕТ РАЗДЕЛИТЕЛЬ?
+	BNE	2$		; ДА
+	DEC	R2		; НЕТ , УДАЛИТЬ ПРЕД. РАЗДЕЛИТЕЛЬ
+	BR	3$
+2$:	MOVB	DELIM,(R2)+	; ЗАКРЫТЬ СТРОКУ ASCII
+3$:	MOVB	#'<,(R2)+
+	CMPB	R0,DELIM
+	BNE	NONASC
+	MOVB	#'',(R2)+
+	MOVB	DELIM,(R2)+
+	BR	5$
+NONASC:	BIC	#^C377,R0
+	CALL	OCONV
+	CALL	MOVTXT
+5$:	MOVB	#'>,(R2)+
+	MOVB	DELIM,(R2)+
+	CLR	$INLIN
+	MOVB	CURBYT,R0
+
+6$:	DEC	CHRCNT		; УМЕНЬШИТЬ СЧЕТЧИК СИМВОЛОВ.
+	BEQ	ENDASC		; КОНЕЦ СТРОКИ
+	CMP	R2,#CURLIN+160.	; ОГРАНИЧЕНИЕ ПО ДЛИНЕ БУФЕРА СТРОКИ
+	BHIS	ENDASC
+	CMPB	R0,#200
+	BEQ	ENDASC
+	CMPB	R0,ENDCHR
+	BEQ	ENDASC
+
+7$:	CALL	GETBYT		; ВЗЯТЬ БАЙТ
+	BCS	ENDASC		; КОНЕЦ
+	TSTB	R0
+	BNE	8$		; НЕ НУЛЕВОЙ БАЙТ
+	MOVB	#'Z,CURLIN+13.	; .ASCIZ
+	BR	ENDASC
+8$:	CMPB	R0,STACHR	; СЛЕД. БАЙТ - СИМВОЛ НОВОЙ СТРОКИ?
+	BEQ	10$		; ДА
+	CMPB	R0,#200
+	BLOS	9$
+	BIT	#L.BI8,PARSWT
+	BEQ	10$
+	CMPB	R0,#377
+	BEQ	10$
+	CMPB	R0,#277
+	BLO	10$	
+9$:	JMP	DECAS1
+10$:	DEC	CURLC
+.DSABL	LSB
+ENDASC: TST	$INLIN
+	BNE	1$
+	DEC	R2
+	BR	2$
+1$:	MOVB	DELIM,(R2)+
+2$:	RETURN
+............................................................
+;
+; ОБРАБОТКА ПАРАМЕТРОВ .RAD50,.BYTE,.WORD
+;
+............................................................
+SETPRM:
+	MOV	#1,R4
+	TST	R5
+	BEQ	1$
+	TSTB	C$NUM(R5)	; ЕСТЬ ДОП. ПАРАМЕТР?
+	BEQ	1$		; НЕТ
+	MOV	C$PARM(R5),R0	; ВЗЯТЬ ДОП. ПАРАМЕТР
+	BEQ	1$
+	CMP	R0,#20.
+	BHI	1$		; СЛИШКОМ БОЛЬШОЙ
+	MOV	R0,R4
+1$:	MOV	R4,CVTLIM
+	RETURN
+............................................................
+;
+;
+; ИНТЕРПРЕТИРОВАТЬ .DRSET
+;	.WORD	-1		    ;000400
+;	.RAD50	/SYSGEN/	    ;000402
+;	.BYTE	<L00412-400>/2,200  ;000406
+;
+............................................................
+DECDRS:
+	CLRB	C$NUM(R5)	; НЕ ДОЛЖНО БЫТЬ АРГУМЕНТОВ
+	MOV	MACLC,R0
+	CMP	R0,#1000
+	BHIS	1$
+	CMP	R0,#400
+	BLO	1$
+	BIT	#1,R0
+	BNE	1$
+	BIC	#^C7,R0
+	JMP	@DRSOP(R0)
+1$:	JMP	OPWRD
+
+	.PSECT	DECDAT
+DRSOP:
+	.WORD	OPWRD		; 0
+	.WORD	DECRD1		; 2
+	.WORD	OPWRD		; 4 - BAD
+	.WORD	DRSRTN		; 6 - П/П .DRSET
+
+	.PSECT	DECODE,D,RO
+
+DECRD1:	MOV	#2,R4		; КОМАНДА RAD:2
+	JMP	RAD1
+DRSRTN:
+	CALL	GETBYT
+	CALL	BEGLIN
+	MOV	#BYTXT,R0
+	CALL	MOVTXT
+	MOVB	#'<,(R2)+
+	MOV	CURBYT,R0
+	ASL	R0		; *2
+	ADD	#400,R0
+	CALL	LOGLS		; ВЫВЕСТИ МЕТКУ
+	MOV	#DRSTXT,R0
+	CALL	MOVTXT
+	CALL	GETBYT		; СЛЕД. БАЙТ
+	BCC	1$		; ВЗЯЛСЯ НОРМАЛЬНО
+	DEC	R2		; УДАЛИТЬ ЗАПЯТУЮ
+	RETURN
+1$:	MOV	CURBYT,R0
+	CALL	OCONV		; ПРЕОБР. В ВОСМ.
+	CALLR	MOVTXT		; ЗАСЛАТЬ В СТРОКУ
+
+............................................................
+;
+; DECRLW - LC REL WORD ( LC БАЗЫ)
+;
+............................................................
+DECRLW:
+	CMPB	C$NUM(R5),#1
+	BNE	1$
+	MOV	C$PARM(R5),R.BASE
+1$:	MOV	R.BASE,R4
+	CALL	GETWRD		; ВОЗЬМЕМ СЛОВО
+	BCS	OPWRD		; НЕ ВЗЯЛОСЬ
+	CALL	BEGLIN
+	MOV	#WOTXT,R0
+	CALL	MOVTXT
+	MOV	CURWRD,R0
+	ADD	R4,R0		; ДОБАВИТЬ LC БАЗЫ
+	CALL	LOGLS		; ПОСТРОИТЬ МЕТКУ
+	MOVB	#'-,(R2)+
+	MOV	R4,R0		; ПОСТОИТЬ МЕТКУ БАЗЫ
+	CALLR	LOGLS
+............................................................
+;
+; DECRLB - LC REL BYTE ( LC БАЗЫ)
+;	.BYTE	<RTN-BASE>/2
+;
+............................................................
+DECRLB:
+	CMPB	C$NUM(R5),#1
+	BNE	1$
+	MOV	C$PARM(R5),R.BASE
+1$:	MOV	R.BASE,R4
+	CALL	GETBYT		; ВОЗЬМЕМ БАЙТ
+;	BCS	DECBYT		; НЕ ВЗЯЛОСЬ
+	CALL	BEGLIN
+	MOV	#BYTXT,R0
+	CALL	MOVTXT
+	MOVB	#'<,(R2)+
+	MOV	CURBYT,R0
+	ASL	R0		; *2
+	ADD	R4,R0		; ДОБАВИТЬ LC БАЗЫ
+	CALL	LOGLS		; ПОСТРОИТЬ МЕТКУ
+	MOVB	#'-,(R2)+
+	MOV	R4,R0		; ПОСТРОИТЬ МЕТКУ БАЗЫ
+	CALL	LOGLS
+	MOVB	#'>,(R2)+
+	MOVB	#'/,(R2)+
+	MOVB	#'2,(R2)+
+	RETURN
+............................................................
+;
+; ИНТЕРПРЕТИРОВАТЬ СЛОВО КАK МЕТКУ
+;
+............................................................
+DECLAB:
+	CALL	SETPRM
+	CALL	GETWRD
+	BCS	OPBYT
+	CALL	BEGLIN
+	MOV	#WOTXT,R0	; ".WORD"
+	CALL	MOVTXT
+
+	MOV	CURWRD,R0
+1$:	CALL	LOGLSX		; ВЫВЕСТИ МЕТКУ С ВОЗМ. ПЕРЕМ.
+	MOVB	#',,(R2)+
+	DEC	R4
+	BLE	ENDLAB
+	CALL	GETWRD
+	BCC	1$
+ENDLAB:	DEC	R2
+	RETURN
+............................................................
+;
+; ИНТЕРПРЕТИРОВАТЬ СЛОВО КАK ДАННЫЕ
+;
+............................................................
+OPWRD:
+	CLR	R5
+DECWRD:
+	CALL	SETPRM
+	CALL	GETWRD
+	BCS	OPBYT
+
+WRD1:	MOV	R0,R1
+	CALL	BEGLIN
+	MOV	#WOTXT,R0	; ".WORD"
+	CALL	MOVTXT
+	MOV	R1,R0
+1$:	MOV	#WRDRTR,R1
+	CALL	EXECVT
+2$:	MOVB	#',,(R2)+
+	DEC	R4
+	BLE	ENDWRD
+	CALL	GETWRD
+	BCC	1$
+ENDWRD:	DEC	R2
+	RETURN
+; ДЕКОДИРОВАНИЕ .WORD ПО УМОЛЧАНИЮ
+DEFWRD:	TST	R0
+	BEQ	DECBLK		; ДЕКОДИРОВАТЬ КАК .BLKB
+	CALLR	SIGCON		; ВЫВЕСТИ .WORD
+............................................................
+;
+; ВЫВЕСТИ СЛОВО .RAD50
+;
+............................................................
+DECRAD:
+	CALL	SETPRM
+RAD1:	CALL	GETWRD
+	BCS	DECBYT
+
+	CMP	R0,#175000
+	BLO	1$
+	CLR	R4
+	BR	WRD1		; ИНТЕРПР. КАК СЛОВО
+1$:	CALL	BEGLIN
+	MOV	#RADTXT,R0
+	CALL	MOVTXT
+2$:	MOV	R2,R0
+	MOV	CURWRD,R3
+	CALL	R50AS1		; ПРЕОБР. В .RAD50
+	MOV	R0,R2
+	DEC	R4		; УМЕНЬШИМ СЧЕТЧИК
+	BLE	ENDRAD		; КОНЕЦ
+	CALL	GETWRD		; ВОЗМЕМ СЛЕД. СЛОВО
+	BCS	ENDRAD		; НЕ ВЗЯЛОСЬ - КОНЕЦ СТРОКИ .RAD50
+	CMP	R0,#175000	; .RAD50?
+	BLO	2$		; ДА
+	SUB	#2,CURLC	; НАЗАД НА СЛОВО
+ENDRAD:	MOVB	#'/,(R2)+
+	RETURN
+............................................................
+;
+; ДЕКОДИРОВАТЬ ОДИН БАЙТ
+;
+............................................................
+OPBYT:
+	CLR	R5		; ДЛЯ ИСПРАВЛЕНИЙ ОШИБОК ДЕКОДИРОВАНИЯ
+DECBYT:
+	CALL	BEGLIN		; БУФЕР НА НАЧАЛО
+	MOV	#BYTXT,R0
+	CALL	MOVTXT
+	CALL	SETPRM
+	CALL	GETBYT
+
+1$:	MOV	#BYTRTR,R1
+	CALL	EXECVT
+	MOVB	#',,(R2)+
+	DEC	R4
+	BLE	ENDBYT
+	CALL	GETBYT
+	BCC	1$
+ENDBYT:	DEC	R2
+	RETURN
+
+............................................................
+;
+; ВЫВЕСТИ НЕСКОЛЬКО СЛОВ ПОДРЯД КАК .BLKW
+;
+............................................................
+DECBLK:
+	MOV	#1,BLCNT
+2$:	CALL	GETWRD
+	BCS	4$
+	TST	R0
+	BNE	1$
+	INC	BLCNT
+	BR	2$
+1$:	SUB	#2,CURLC
+4$:	CMP	BLCNT,#1
+	BNE	3$
+	MOVB	#'0,(R2)+
+	RETURN
+3$:	CLR	R4
+	MOV	SP,BLKB1	; УСТАНОВИТЬ ФЛАГ .BLKB
+	CALL	BEGLIN	
+	MOV	#BLTXT,R0
+	CALLR	MOVTXT
+
+............................................................
+;
+; ОБРАБОТКА ОПЕРАНДА В R0
+;
+............................................................
+	.PSECT	DECDAT,D
+;		RX	@RX	(RX)+	@(RX)+	-(RX)	@-(RX)	X(RX)	@X(RX)
+MODES:	.WORD	M0,	M1,	M2,	M3,	M4,	M5,	M6,	M7
+;		PC	(PC)	#	@#	-(PC)	@-(PC)	OFF	@OFF
+PCMODE: .WORD	XM0,	XM1,	PCM2,	PCM3,	XM4,	XM5,	PCM6,	PCM7
+
+	.PSECT	DECODE,D,RO
+
+GETREG:
+	MOV	R0,R4
+	BIC	#70,R4		; ВЫДЕЛИТЬ  РЕГИСТР
+	ASR	R0		; ВЫДЕЛИТЬ MODE
+	ASR	R0
+	BIC	#61,R0
+	CMP	R4,#6
+	BEQ	1$
+	BLT	2$
+	MOV	#"PC,R4
+	BR	3$
+1$:	MOV	#"SP,R4
+	BR	3$
+2$:	ADD	#"0R,R4
+	SWAB	R4
+3$:	RETURN
+
+AMODE:
+REG:
+	CALL	GETREG
+	CMP	R4,#"PC
+	BNE	1$
+	JMP	@PCMODE(R0)
+1$:	JMP	@MODES(R0)
+............................................................
+;
+; РАЗБОР ВИДОВ АДРЕСАЦИИ
+;
+............................................................
+XM0:	BIS	#N.BAD,INFORM	; НЕХОРОШАЯ АДРЕСАЦИЯ
+	TST	DSTFLG
+	BEQ	M0
+	BIS	#$LBINS,TYPINS	; БЕЗУСЛОВНАЯ ПЕРЕДАЧА УПРАВЛЕНИЯ
+M0:	MOVB	R4,(R2)+
+	SWAB	R4
+	MOVB	R4,(R2)+
+	RETURN
+
+XM1:	BIS	#N.BAD,INFORM	; НЕХОРОШАЯ АДРЕСАЦИЯ
+M1:	MOVB	#'@,(R2)+
+	BR	M0
+
+M1A:	MOVB	#'(,(R2)+
+	MOVB	R4,(R2)+
+	SWAB	R4
+	MOVB	R4,(R2)+
+	MOVB	#'),(R2)+
+	RETURN
+
+M2:	CALL	M1A
+	MOVB	#'+,(R2)+
+	RETURN
+
+M3:	MOVB	#'@,(R2)+
+	BR	M2
+
+XM4:	BIS	#N.BAD,INFORM	; НЕХОРОШАЯ АДРЕСАЦИЯ
+M4:	MOVB	#'-,(R2)+
+	BR	M1A
+
+XM5:	BIS	#N.BAD,INFORM	; НЕХОРОШАЯ АДРЕСАЦИЯ
+M5:	MOVB	#'@,(R2)+
+	BR	M4
+
+M6:	CALL	GTMORE		; X(REG)
+	CALL	TSTODD		; ПРОВЕРИТЬ НА НЕЧЕТНЫЙ АДРЕС
+	MOV	#OFFRTR,R1
+	CALL	EXECVT
+	BR	M1A
+
+DEFOFF:	CALL	PTLSXT		; ВЫВЕСТИ МЕТКУ С ПРОВЕРКОЙ НА ДОП. АДРЕС С ПЕРЕМЕЩЕНИЕМ
+	BCS	1$		; НЕ ДОП.
+	RETURN
+1$:	CALLR	SIGCON
+
+M7:	MOVB	#'@,(R2)+	; @X(REG)
+	BR	M6
+
+PCM2:	TST	NOINTF		; ЗАПРЕЩЕНО # ?
+	BNE	2$		; ДА
+	TST	DSTFLG		; ЭТО - DST ?
+	BEQ	1$		; НЕТ
+	BIT	#$NOINT,TYPINS	; ЗАПРЕЩЕНО # ?
+	BEQ	1$
+2$:	BIS	#N.DINT,INFORM	; ОБОЗНАЧИМ, ЧТО РАСКРЫЛИ АДРЕСАЦИЮ
+	BR	М2		; ИНТЕРПРЕТИРОВАТЬ КАК (PC)+
+1$:	MOVB	#'#,(R2)+	; #X
+	CALL	GTMORE
+	MOV	#INTRTR,R1
+	CALLR	EXECVT
+DEFINT:
+	BIT	#$NOSIG,TYPINS	; БИТОВЫЕ ИНСТР.?
+	BNE	OCON		; ДА
+	BIT	#$NOLAB,TYPINS	; НЕ ПРОСТАВЛЯТЬ МЕТКУ
+	BEQ	1$
+	CALLR	SIGCON
+1$:	BIT	#L.ASB,PARSWT
+	BEQ	INTLAB
+	BIT	#$BYTE,TYPINS	; БАЙТОВАЯ ИНСТР. ?
+	BEQ	INTLAB		; НЕТ
+INTBAS:
+	CMP	R0,#40		; ASCII ?
+	BLE	INTLAB
+	CMP	R0,#177
+	BGE	INTLAB
+	MOVB	#'',(R2)+
+	MOVB	R0,(R2)+
+	RETURN
+INTLAB:
+	BIT	#$BYTE,TYPINS	; БАЙТОВАЯ ИНСТР. ?
+	BNE	INTOCT		; ДА, НЕ МОЖЕТ БЫТЬ МЕТКОЙ
+	CALL	PTLSXT
+	BCS	INTOCT
+	RETURN
+INTOCT:	CALLR	SIGCON
+
+OCON:	CALL	OCONV
+	CALLR	MOVTXT
+PCM3:
+	TST	NOINTF		; ЗАПРЕЩЕНО # ?
+	BEQ	1$		; ДА
+	BIS	#N.DINT,INFORM	; ОБОЗНАЧИМ, ЧТО РАСКРЫЛИ АДРЕСАЦИЮ
+	BR	М3		; ИНТЕРПРЕТИРОВАТЬ КАК @(PC)+
+1$:	MOVB	#'@,(R2)+	; @#X
+	MOVB	#'#,(R2)+
+	CALL	GTMORE
+	BR	COMPCM
+PCM6:
+	CALL	GTMORE		; X
+	ADD	CURLC,R0
+COMPCM:	CALL	TSTODD		; ПРОВЕРИТЬ НА НЕЧЕТНЫЙ АДРЕС
+	TST	NOLABF		; ЗАПРЕЩЕНО ОБРАЗОВАНИЕ МЕТКИ?
+	BEQ	2$		; НЕТ, РАЗРЕШЕНО
+	TST	EN.ARG
+	BMI	OCON		; ЗАПРЕЩЕНО ДЛЯ ВСЕХ ОПЕРАНДОВ
+	CMP	EN.ARG,DSTFLG
+	BEQ	OCON
+2$:	BIT	#L.EXT,PARSWT	; НЕ ПРОВЕРЯТЬ МЕТКУ?
+	BNE	1$		; ДА
+	CALL	PTLSXT
+	BCS	OCON
+	RETURN
+1$:	CALLR	LOGLSX
+PCM7:
+	MOVB	#'@,(R2)+	; @X
+	BR	PCM6
+............................................................
+;
+;  ВЫВЕСТИ МЕТКУ С ВОЗМОЖНЫМ ПЕРЕМЕЩЕНИЕМ
+;
+............................................................
+PTLSXT::			; ВЫВЕСТИ МЕТКУ С ПРОВЕРКОЙ АДРЕСА
+	CALL	PENTRY
+LOGLSX::			; ВЫВЕСТИ МЕТКУ БЕЗ ПРОВЕРКИ
+	CLR	-(SP)
+PENTRY:
+	MOV	R0,-(SP)
+	TST	OFFSET
+	BEQ	4$
+	TST	EN.ARG
+	BMI	1$		; ВСЕ ПРЕОБРАЗОВАНИЯ РАЗРЕШЕНЫ
+	MOV	EN.ARG,-(SP)
+	INC	@SP
+	CMP	(SP)+,NUMLS	; СОВПАДАЕТ С НОМЕРОМ МЕТКИ?
+	BNE	4$		; НЕТ, ЗАПРЕТИТЬ
+
+1$:	SUB	OFFSET,R0
+	TST	2(SP)
+	BEQ	2$		; НЕ ПРОВЕРЯТЬ МЕТКУ НА ДОПУСТИМОСТЬ
+	CALL	TSTLAB		; ПРОВЕРИТЬ МЕТКУ НА ДОП.
+	BCS	7$
+2$:	CALL	LOGLS
+	MOVB	#'+,(R2)+
+	MOV	OFFSET,R0
+	BPL	3$
+	MOVB	#'-,-1(R2)
+	NEG	R0
+3$:	CALL	OCONV
+	CALL	MOVTXT
+	BR	6$
+4$:	TST	2(SP)
+	BEQ	5$		; НЕ ПРОВЕРЯТЬ МЕТКУ НА ДОПУСТИМОСТЬ
+	CALL	TSTLAB		; ПРОВЕРИТЬ МЕТКУ НА ДОП.
+	BCS	7$		; НЕ ДОП.
+5$:	CALL	LOGLS
+6$:	MOV	(SP)+,R0
+	TST	(SP)+
+	RETURN
+7$:	MOV	(SP)+,R0
+	TST	(SP)+
+	SEC
+	RETURN
+............................................................
+;
+; ПРОВЕРКА МЕТКИ, УКЛАДЫВАЕТСЯ ЛИ ОНА В В ДОПУСТИМЫЕ ГР. ПАМЯТИ
+; 'C' - ЕСЛИ НЕТ
+;
+............................................................
+
+TSTLAB:
+	MOV	R1,-(SP)
+;+++
+	TST	RCLTBL		; ЕСТЬ ТАБЛИЦА ОВЕРЛЕЙНЫХ ВЫЗОВОВ?
+	BEQ	4$		; ДА
+	CMP	R0,RCLBEG
+	BLO	4$		; НЕ ВОШЛА В ОБЛАСТЬ ТАБЛИЦЫ
+	CMP	R0,RCLEND
+	BHI	4$		; НЕ ВОШЛА В ОБЛАСТЬ ТАБЛИЦЫ
+	MOV	R0,R1
+	SUB	RCLBEG,R1
+	BIT	#7,R1
+	BNE	3$		; НЕДОП. ЗНАЧЕНИЕ МЕТКИ
+	BR	2$		; НОРМАЛЬНАЯ МЕТКА
+;---
+4$:	CMP	CURSGN,STREAM	; МЕТКА НАПРАВЛЕНА В ТЕКУЩИЙ СЕГМЕНТ
+	BEQ	1$		; ДА
+	MOV	LABSEG,R1
+	CMP	R0,O$LLAB(R1)
+	BLO	3$		; НЕ УЛОЖИЛАСЬ
+	CMP	R0,O$HLAB(R1)
+	BHIS	3$		; НЕ УЛОЖИЛАСЬ
+	BR	2$		; НОРМАЛЬНО
+
+1$:	CMP	R0,H.LAB
+	BHIS	3$		; НЕ УЛОЖИЛАСЬ
+	CMP	R0,L.LAB
+	BHIS	2$		; В ПРЕДЕЛАХ СЕГМЕНТА
+	TST	CURSGN
+	BEQ	3$		; ДЕКОДИРУЕМ ROOT, ВСЕ В ПРЕДЕЛАХ СЕГМЕНТА
+; ДОП. ОБЛАСТЬ ДЛЯ ОВЕРЛЕЙНЫХ СЕГМЕНТОВ : ROOTL-ROOTH
+	CMP	R0,ROOTL	; НИЖЕ ОБЛАСТИ КОРНЕВОГО СЕГМЕНТА?
+	BLO	3$		; ДА
+	CMP	R0,ROOTH	; ВЫШЕ ОБЛАСТИ КОРНЕВОГО СЕГМЕНТА
+	BHIS	3$		; ДА
+2$:	TST	(PC)+
+3$:	SEC
+	MOV	(SP)+,R1
+	RETURN
+............................................................
+;
+; ВВЕСТИ ЕЩЕ ОДНО СЛОВО И ОБРАБОТАТЬ
+;
+............................................................
+GTMORE:
+	CALL	GETWRD
+	BCS	RECOV
+	RETURN
+............................................................
+;
+; ПРОВЕРКА НА НЕЧЕТНЫЙ АДРЕС
+;
+............................................................
+TSTODD:
+	BIT	#$BYTE,TYPINS	; БАЙТОВАЯ ИНСТР. ?
+	BNE	1$		; ДА
+	BIT	#1,R0		; НЕЧЕТНЫЙ АДРЕС?
+	BEQ	1$		; НЕТ
+	BIS	#N.ODD,INFORM	; ПОМЕТИТЬ, ЧТО ОБНАР. НЕЧЕТ. АДР.
+	BIT	#L.ODD,PARSWT	; РАЗРЕШЕНО ДЕКОДИРОВАНИЕ НЕЧЕТ. ИНСТР.
+	BEQ	RECOV		; НЕТ
+1$:	RETURN
+
+; ВОССТАНОВЛЕНИЕ СОСТОЯНИЯ СТРОКИ, ПЕРЕХОД НА ДЕКОДИРОВАНИЕ WORD
+
+RECOV::
+	CALL	SETUP
+	МОV	CMDSP,SP	; ВОССТАНОВИТЬ SP DECCMD
+	JMP	INVOP
+............................................................
+;
+; П/П ОБРАБОТКИ ОПЕРАНДОВ ИНСТР.
+;
+............................................................
+
+; БЕЗ ОПЕРАНДОВ
+NOARG::	DEC	R2		; УСЕЧЕМ КОНЦЕВУЮ ТАБУЛЯЦИЮ
+	RETURN
+; РЕГИСТРОВЫЙ ОПЕРАНД
+DREG::	BIC	#177770,R0
+	CALLR	REG
+; ОДИН ОПЕРАНД-ПОЛУЧАТЕЛЬ
+DST1:	MOVB	#',,(R2)+
+	MOV	CURINS,R0
+DST::	INC	DSTFLG
+	BIC	#177700,R0
+	BIT	#$NOREG,TYPINS	; ЗАПРЕЩЕНО РЕГИСТРОВОЕ DST?
+	BNE	1$		; ДА
+2$:	CALLR	AMODE
+1$:	BIT	#70,R0		; РЕГИСТРОВАЯ ОПЕРАЦИЯ?
+	BNE	2$		; НЕТ
+	JMP	INVOP		; НЕДОПУСТИМАЯ КОМАНДА
+; ДВА ОПЕРАНДА
+SRCDST::ROL	R0
+	ROL	R0
+	SWAB	R0
+	BIC	#177700,R0
+	CALL	AMODE
+	BR	DST1
+; РЕГИСТР-ПОЛНЫЙ ОПЕРАНД (JSR,XOR)
+RDST::	ROL	R0
+	ROL	R0
+	SWAB	R0
+	BIC	#177770,R0
+	CALL	REG
+	BR	DST1
+; ПЕРЕВЕРНУТЫЕ ОПЕРАНДЫ (SRC-REG, EIS)
+RSRC::	BIC	#177700,R0
+	CALL	AMODE
+	MOVB	#',,(R2)+
+	MOV	CURINS,R0
+	ROL	R0
+	ROL	R0
+	SWAB	R0
+	BR	DREG		; ОБРАБОТАТЬ РЕГИСТР
+; ЦИФРОВЫЕ ОПЕРАНДЫ
+DIG3::	BIC	#177770,R0
+	BR	COMDIG
+DIG6::	BIC	#177700,R0
+	BR	COMDIG
+DIG8::	BIC	#177400,R0
+COMDIG: CALL	OCONV
+	CALLR	MOVTXT
+; SOB
+RDIG8:: ROL	R0
+	ROL	R0
+	SWAB	R0
+	BIC	#177770,R0
+	CALL	REG
+	MOVB	#',,(R2)+
+	MOV	CURINS,R0
+	BIC	#177700,R0
+	BNE	RD1
+INV:	JMP	INVOP
+RD1:	NEG	R0
+; КОРОТКИЕ ПЕРЕХОДЫ
+BRANCH::MOVB	R0,R0		; РАСШИРИТЬ МЛАДШИЙ БАЙТ
+	ASL	R0		; *2- В БАЙТЫ
+	ADD	CURLC,R0	; ВЫЧИСЛИТЬ АДРЕС
+	CALLR	LOGLL		; ПОСТРОИТЬ МЕТКА ($)
+; ОБРАБОТКА FPP - ИНСТР.
+ACFDST::CALL	GETAC
+	MOVB	#',,(R2)+
+	MOV	CURINS,R0
+FDST::	CALLR	FMOD
+ACFSRC::CALL	FMOD
+	BR	FSRC
+ACSRC::	BIC	#177700,R0
+	CALL	AMODE
+FSRC:	MOVB	#',,(R2)+
+	CALLR	GETAC
+ACDST::	CALL	GETAC		;+++NEW - V15
+	MOVB	#',,(R2)+
+	MOV	CURINS,R0
+	BIC	#177700,R0
+	CALLR	AMODE
+FMOD:	BIC	#177700,R0
+	BIT	#70,R0
+	BNE	1$
+	BR	ACM
+1$:	CALLR	AMODE
+
+GETAC:	MOV	CURINS,R0
+	ROL	R0
+	ROL	R0
+	SWAB	R0
+	BIC	#177774,R0
+ACM:	BIC	#177770,R0
+	MOVB	#'%,(R2)+
+	ADD	#'0,R0
+	MOVB	R0,(R2)+
+	RETURN
+............................................................
+;
+; УСТАНОВКА НАЧАЛА СТРОКИ
+;
+............................................................
+SETUP:
+;	MOV	CHRLIM,CHRCNT	; УСТАНОВИТЬ ВРЕМЕННЫЙ CHRCNT
+	MOV	MACLC,CURLC
+	MOV	#LINBYT,L.B.PN
+	MOV	#LABREF,L.R.PN
+	MOV	#REFTYP,R.T.PN
+	MOV	#REFSTM,R.S.PN
+	CLR	BLKB1		; СБРОСИТЬ ФЛАГ .BLKB
+	CLR	INFORM
+	MOV	#LT.LAB,LABTYP
+	CLR	INSPOS		; ДЛЯ ДАННЫХ INSPOS=0
+	CLR	NUMLS
+	CALLR	NXTSTM
+SAVSP:
+	MOV	SP,CMDSP	; СТЕК УРОВНЯ CMD
+	RETURN
+............................................................
+;
+; ВОССТАНОВЛЕНИЕ СОСТОЯНИЯ ТЕКУЩЕЙ СТРОКИ
+;
+; В R0 - LC, ДО КОТОРОГО НУЖНО ВОССТАНОВИТЬСЯ
+;
+............................................................
+RESLIN::
+	CALL	INICTX
+	MOV	R0,MACLC
+	MOV	R0,CURLC
+
+	MOV	#S.C.SV,R5
+3$:	MOV	@R5,R5
+	BEQ	9$
+	CMP	C$LC(R5),CURLC
+	BHIS	9$
+	MOVB	C$CMD(R5),R0
+	CMPB	R0,#-1
+	BEQ	3$
+	CLR	CURCMT
+	ASL	R0
+	CALL	@$CMDTB(R0)
+	BR	3$
+9$:	MOV	R5,SETCMD
+	MOV	#M.C.SV,R5
+4$:	MOV	@R5,R5
+	BEQ	10$
+	CMP	C$LC(R5),CURLC
+	BHIS	10$
+	MOV	R5,CURCMD
+	BR	4$
+10$:	MOV	R5,MODCMD
+	RETURN
+............................................................
+;
+; ВЫПОЛНЕНИЕ П/П ПРЕОБРАЗОВАНИЯ
+;
+............................................................
+EXECVT:
+	TST	EN.ARG
+	BMI	3$		; ПРЕОБРАЗОВАНИЯ РАЗРЕШЕНЫ ДЛЯ ВСЕХ
+	CMP	R1,#OFFRTR
+	BEQ	1$
+	CMP	R1,#INTRTR
+	BNE	2$
+1$:	CMP	DSTFLG,EN.ARG
+	BEQ	3$		; РАЗРЕШЕНО ПРЕОБРАЗОВАНИЕ
+	BR	4$		; ЗАПРЕЩЕНО
+2$:	MOV	CVTLIM,-(SP)
+	SUB	R4,@SP
+	CMP	EN.ARG,(SP)+
+	BNE	4$		; ЗАПРЕЩЕНО, ПРЕОБРАЗУЕМ ПО УМОЛЧАНИЮ
+3$:	ADD	C.SUBR,R1
+4$:	CALLR	@(R1)+
+............................................................
+;
+; П/П ПРЕОБРАЗОВАНИЙ ДЛЯ #,.WORD,.BYTE
+;	R0 - АРГУМЕНТ
+............................................................
+CVTCMB:
+	COMB	R0
+	BR	COMP
+CVTCOM:
+	COM	R0
+COMP:	MOVB	#'^,(R2)+
+	MOVB	#'C,(R2)+
+	CALL	OCONV
+	CALLR	MOVTXT
+CVTRAD:
+	CMP	R0,#175000
+	BHIS	CVTOCT		; НЕ МОЖЕТ БЫТЬ RAD50
+	MOVB	#'<,(R2)+
+	MOVB	#'^,(R2)+
+	MOVB	#'R,(R2)+
+	MOV	R0,R3
+	MOV	R2,R0
+	CALL	R50AS1		; ПРЕОБР. В .RAD50
+	MOV	R0,R2
+	MOVB	#'>,(R2)+
+	RETURN
+CVTDEC:
+	BIT	#L.SIG,PARSWT
+	BEQ	1$
+	TST	R0
+	BPL	1$
+	NEG	R0
+	MOVB	#'-,(R2)+
+1$:	CALL	DCONV		; ПРЕОБР. В ДЕС.
+	CALL	MOVTXT
+	MOVB	#'.,(R2)+
+	RETURN
+CVTBIN:
+	MOVB	#'^,(R2)+
+	MOVB	#'B,(R2)+
+	CALL	BCONV		; ПРЕОБР. В ДВОИЧНОЕ
+	CALLR	MOVTXT
+CVTASC:
+	CMP	R0,#40		; ASCII ?
+	BLE	CVTOCT
+	CMP	R0,#177
+	BGE	CVTOCT
+	MOVB	#'',(R2)+
+	MOVB	R0,(R2)+
+	RETURN
+CVTWAS:
+	CMPB	R0,#40
+	BLT	CVTOCT
+	CMPB	R0,#177
+	BGE	CVTOCT
+	CMPB	CURWRD+1,#40
+	BLT	CVTOCT
+	CMPB	CURWRD+1,#177
+	BGE	CVTOCT
+	MOVB	#'",(R2)+
+	MOVB	R0,(R2)+
+	MOVB	CURWRD+1,(R2)+
+	RETURN
+CVTOCT:
+SIGCON:
+	BIT	#L.SIG,PARSWT
+	BEQ	1$
+	TST	R0
+	BPL	1$
+	CMP	R0,#-376	; МЕНЬШЕ -376 ?
+	BLT	1$
+	NEG	R0
+	MOVB	#'-,(R2)+
+1$:	CALL	OCONV
+	CALLR	MOVTXT
+CVTRPC:
+	ADD	MACLC,R0
+	CALL	LOGLS
+	MOVB	#'-,(R2)+
+	MOVB	#'.,(R2)+
+	RETURN
+CVTBAS:
+	ADD	R.BASE,R0	; ДОБАВИТЬ LC БАЗЫ
+	CALL	LOGLS		; ПОСТРОИТЬ МЕТКУ
+	MOVB	#'-,(R2)+
+	MOV	R.BASE,R0	; ПОСТОИТЬ МЕТКУ БАЗЫ
+	CALLR	LOGLS
+;	ВЫВОД СТРОКИ	.END	[START]
+ENDPRT::
+	CALL	BEGLIN
+	MOV	#CURLIN,R2
+	MOV	#ENDTXT,R0
+	CALL	MOVTXT
+
+	MOV	S.ADDR,R0
+	BIT	#1,R0
+	BNE	1$
+	CMP	R0,L.ADDR
+	BLO	1$
+	CMP	R0,H.ADDR
+	BLO	2$
+1$:	MOV	#CURLIN+5,R2
+2$:	CALL	OUT$LIN
+	RETURN			; КОНЕЦ П/П
+............................................................
+;
+; П/П ВВОДА СЛОВА ИЗ ФАЙЛА В R0
+; ПРОДВИГАЕТ CURLC
+;
+............................................................
+GETWRD::
+	MOV	MODCMD,R0
+	BEQ	1$
+	MOV	C$LC(R0),R0
+	CMP	R0,CURLC
+	BEQ	3$
+	DEC	R0
+	CMP	R0,CURLC
+	BEQ	3$
+1$:	MOV	CURLC,R0
+	CMP	R0,H.ADDR	; ВЫШЛИ ЗА ГРАНИЦУ?
+	BHIS	3$		; ДА,ОШИБКА
+	BIT	#1,R0		; ВЫРАВН.?
+	BNE	3$		; ДА,ОШИБКА
+	TSTB	SEGFLG
+	BEQ	4$
+	CLR	R0
+	BR	5$
+4$:	CALL	RD$REL
+	MOV	(R0),R0		; ВЗЯТЬ СЛОВО
+5$:	MOV	R0,CURWRD
+	CMP	L.B.PNT,#LINBYT+L.B.SZ
+	BHIS	2$
+	MOV	R0,@L.B.PNT
+	ADD	#2,L.B.PNT
+2$:	ADD	#2,CURLC
+	CLC
+	RETURN
+3$:	SEC
+	RETURN
+............................................................
+;
+; П/П ВВОДА БАЙТА ИЗ ФАЙЛА В R0
+; ПРОДВИГАЕТ CURLC
+;
+............................................................
+GETBYT::
+	MOV	MODCMD,R0
+	BEQ	1$
+	MOV	C$LC(R0),R0
+	CMP	R0,CURLC
+	BEQ	3$
+1$:	MOV	CURLC,R0
+	CMP	R0,H.ADDR	; ВЫШЛИ ЗА ГРАНИЦУ?
+	BHIS	3$		; ДА,ОШИБКА
+	TSTB	SEGFLG
+	BEQ	4$
+	CLR	R0
+	BR	5$
+4$:	CALL	RD$REL
+	MOVB	(R0),R0		; ВЗЯТЬ БАЙТ
+	BIC	#^C377,R0
+5$:	MOVB	R0,CURBYT
+	CMP	L.B.PNT,#LINBYT+L.B.SZ
+	BHIS	2$
+	MOVB	R0,@L.B.PNT
+	INC	L.B.PNT
+2$:	ADD	#1,CURLC
+	CLC
+	RETURN
+3$:	SEC
+	RETURN
+
+.ENABL	LSB
+RD$ABS::
+	CLC
+	BR	1$
+RD$REL::
+	SUB	SEGBAS,R0	; БАЗА СЕГМЕНТА
+1$:	MOV	R0,-(SP)
+	ROR	R0		; ВЫЧ. НОМЕР БЛОКА
+	SWAB	R0
+	MOVB	R0,R0		; РАСШИРИТЬ ЗНАК ОПЕРАНДА
+	ADD	SEGBLK,R0	; БАЗОВЫЙ БЛОК СЕГМЕНТА
+	CMP	R0,MEMBLK	; БЛОК В ПАМЯТИ?
+	BEQ	2$
+	CALL	RD$BLK		; СЧИТАТЬ БЛОК ИЗ ПАМЯТИ(НОМЕР - В R0)
+2$:	MOV	(SP)+,R0
+	BIC	#^C777,R0
+	ADD	#INBUF,R0
+	RETURN
+.DSABL	LSB
+............................................................
+;
+; PUT$LIN - ВЫХОДНАЯ ОБРАБОТКА СТРОКИ
+;	    УКАЗАТЕЛЬ НА КОНЕЦ R2
+............................................................
+PUT$LIN::
+	TST	D.PASS		; 1,2-Й ПРОХОД?
+	BLE	1$		; НИЧЕГО НЕ ДЕЛАТЬ
+	CALLR	INSLAB		; ПРОСТАВИТЬ МЕТКИ
+1$:	TST	LSTP1
+	BNE	WR
+	RETURN
+............................................................
+;
+; OUT$LIN - ВЫВОД В ВЫХ. ФАЙЛ
+;
+............................................................
+OUT$LIN::
+	TST	LSTP1
+	BNE	WR
+	TST	D.PASS	; 1,2 ПРОХОДЫ - НЕ ВЫВОДИТЬ НА ТЕРМИНАЛ
+	BLE	1$
+WR=.
+	CALL	WR$LIN
+1$:	RETURN
+
+	.PSECT	DECDAT,D
+LSTP1::	.WORD	0
+
+
+	.END

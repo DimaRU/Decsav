@@ -1,0 +1,323 @@
+.INCLUDE /DECDFN/
+.MODULE DECCSI,RELEASE=V05,VERSION=13,COMMENT=<ОБРАБОТКА CSI>
+
+.REM	\
+ВЫЗОВ:
+.R DECS
+*OUTSPC=INSPC/SWITCHES		! STANDART CSI FORMAT
+ИЛИ
+.DECS INSPC OUTSPC/SWITCHES	! CCL FORMAT
+(ФАЙЛ DECS.SAV ДОЛЖЕН НАХОДИТЬСЯ НА SY: )
+ИЛИ
+.DECS INSPC/SWITCHES
+(ВЫВОД БУДЕТ НАПРАВЛЕН НА ТЕРМИНАЛ)
+
+РАСШИРЕНИЕ ПО УМОЛЧАНИЮ ДЛЯ ВХОДНОГО ФАЙЛА : .SAV / .LDA / .TSK
+РАСШИРЕНИЕ ПО УМОЛЧАНИЮ ДЛЯ ФАЙЛА ДИАЛОГА : .DIA
+РАСШИРЕНИЕ ПО УМОЛЧАНИЮ ДЛЯ ВЫХОДНОГО ФАЙЛА : .MAC
+
+ЕСЛИ ВЫХОДНОЙ ФАЙЛ НЕ УКАЗАН , ТО ВЫВОД БУДЕТ НАПРАВЛЕН НА ТЕРМИНАЛ
+(С ПОМ. .PRINT)
+    НАПРИМЕР:
+	*SY:DIR
+КАНАЛЫ:
+.MAC,.DIA (ВЫХ.) - 0
+.SAV,.LDA,.TSK (ВХ.)  - 3
+.DIA (ВХ.)  - 4
+
+КЛЮЧИ:	СМ. DECS.HLP
+\
+
+	.MCALL	.GTLIN	.PRINT	.SERR	.HERR
+	.MCALL	.CSISPC	.SETTOP	.RCTRLO	.SRESET
+	.MCALL	.LOOKUP	.ENTER	.FETCH	.SCCA
+
+	.PSECT	DECDAT,D
+STKSAV: .BLKW	1	; ДЛЯ СОХР. СТЕКА
+DISSWT:	.BLKW	1	; БИТЫ ЗАПРЕЩЕНИЯ PARSWT
+AREA:	.BLKW	20
+OUTSPC:	.BLKW	5
+OUTSPX:	.BLKW	5*2
+INSPC:	.BLKW	4*6
+TSEMT:	.WORD	44000
+.IF	DF,D$SAV
+EXT:	.RAD50	/SAVMACNONNON/	;РАСШИРЕНИЯ ПО УМОЛЧ. ДЛЯ CSISPC
+.IFF
+EXT:	.RAD50	/TSKMACNONNON/	;РАСШИРЕНИЯ ПО УМОЛЧ. ДЛЯ CSISPC
+.ENDC
+
+HILIM=:.+2
+	.LIMIT
+
+;
+; ТАБЛИЦА КЛЮЧЕЙ
+;
+.MACRO	SWITCH	MNEM	SUBR
+	.WORD	''MNEM
+	.WORD	SUBR
+.ENDM	SWITCH
+
+.MACRO	ENDTAB
+	.WORD	0	; КОНЕЦ ТАБЛИЦЫ
+.ENDM	ENDTAB
+
+SWTBL:
+
+SWITCH	P	SW.PRS
+SWITCH	E	SW.PAR
+SWITCH	D	SW.DBL
+SWITCH	C	SW.CMT
+SWITCH	B	SW.BRK
+SWITCH	O	SW.OVN
+SWITCH	S	SW.SGD
+SWITCH	Z	SW.DBG
+.IF DF,D$SAV
+SWITCH	L	SW.LDA
+.ENDC
+	ENDTAB
+
+.INCLUDE /DECSWT.INC/
+
+	.PSECT
+DECCSI::
+.IF DF,D$SAV
+	MOV	#^RSAV,EXT
+.ENDC
+	MOV	SP,STKSAV
+	CLR	PARTBL
+	CLR	DISTBL
+	CLR	COMTBL
+	CLR	CNFTBL
+	CLR	DISSWT
+	CLR	SGDSWT
+	CLR	SGDFLG
+	CLR	CNFFLG
+CLR	LSTP1		;DEBUG
+	MOV	(PC)+,@(PC)+
+	.WORD	L.ODD!L.CAL!L.LST!L.SIG,PARSWT
+	MOV	(PC)+,@(PC)+
+..DEFCM==.
+	.WORD	C.CMT,COMSWT
+	MOV	(PC)+,@(PC)+
+..DEFCN==.
+	.WORD	P40B$!KERNL$!EIS$!LSI$,CONFIG
+
+	.SERR
+	MOV	#TSEMT,R0		; .TSLINE
+	EMT	375
+	BCS	1$
+	MOV	SP,TSXFLG
+1$:	.HERR
+	
+RECOVER:
+	.RCTRLO
+.IF	DF,$CODE
+.$DMS2==.+2
+	CALL	$DECMS-<1010+$CONST>
+.ENDC
+	MOV	HILIM,R0
+	ADD	#4,R0
+	MOV	R0,LOCORE		; АДРЕС ЗА ДРАЙВЕРАМИ
+	.SETTOP
+JSW=44
+TTLC$	=  40000
+SLED$	=  20
+GTLIN$	=  10
+	BIC	#TTLC$!SLED$!GTLIN$,@#JSW	; ^C ДЛЯ .GTLIN
+	.SCCA	#AREA,#0		; РАЗРЕШИТЬ ПРЕРЫВАНИЕ ПО CTRL/C
+	.CSISPC	#OUTSPC,#EXT,#0,#CSISTR	; ВЗЯТЬ КОМАНДНУЮ СТРОКУ С ТЕРМИНАЛА
+	BIS	#TTLC$!GTLIN$,@#JSW
+
+	MOV	(SP)+,R0	; R0 - ЧИСЛО КЛЮЧЕЙ
+	INC	R0
+.IF	DF,$CODE
+.$DMS3==.+2
+	CALL	$DECMS-<1100+$CONST>
+.ENDC
+SW:	DEC	R0
+	BEQ	ENDCSI		; БОЛЬШЕ НЕТ КЛЮЧЕЙ
+	CLR	R2		; ЗНАЧЕНИЕ КЛЮЧА ПО УМОЛЧАНИЮ - 0
+	MOV	(SP)+,R1	; ИМЯ КЛЮЧА
+	BPL	1$		; НЕТ ЗНАЧЕНИЯ
+	MOV	(SP)+,R2	; ЗНАЧЕНИЕ В R2
+
+1$:	MOV	#SWTBL,R5
+2$:	MOV	(R5)+,R4
+	BEQ	ERRSW
+	MOV	(R5)+,R3
+	CMPB	R1,R4		; МНЕМОНИКА СОВПАДАЕТ?
+	BNE	2$
+	CALL	@R3		; ВЫЗВАТЬ П/П ОБРАБОТКИ КЛЮЧА
+	BR	SW
+
+ERRSW:	FATAL	E.SWT		; ОШИБОЧНЫЙ КЛЮЧ
+;
+; П/П ОБРАБОТКИ КЛЮЧЕЙ
+;
+SW.BRK:	MOV	SP,BRKFLG	; BREAK
+	RETURN
+
+SW.DBG:	INC	LSTP1		; DEBUG+++
+	RETURN
+
+SW.PRS:	MOV	#CNFTBL,R3	; PROCESSOR
+	CALL	TABLUP
+	BCS	ERRSW
+	MOV	SP,CNFFLG
+	RETURN
+
+SW.PAR:	MOV	#PARTBL,R3	; ENABL
+	BR	TBLUP
+
+SW.CMT:	MOV	#COMTBL,R3	; COMMENT
+	BR	TBLUP
+
+SW.DBL:	MOV	#DISTBL,R3	; DISABL
+TBLUP:	CALL	TABLUP
+	BCS	ERRSW
+	RETURN
+
+SW.SGD:	MOV	SP,SGDSWT	; SEGMENT DEFINITION
+	MOV	SP,SGDFLG
+	RETURN
+
+SW.OVN:	MOV	R2,OVRNUM	; OVERLAY
+	RETURN
+
+.IF DF,D$SAV
+SW.LDA:	MOV	SP,LDAFLG	; ABSOLUTE MODULE
+	MOV	#^RLDA,EXT	; РАСШИРЕНИЕ ВХОДНОГО ФАЙЛА - .LDA
+	RETURN
+.ENDC
+
+ENDCSI:
+	MOV	STKSAV,SP	; ВОССТАНОВИТЬ СТЕК
+.IF	DF,$CODE
+.$DMS4==.+2
+	CALL	$DECMS-<111000+$CONST>
+.ENDC
+	MOV	#^CCSISTR,R0
+	COM	R0
+	TSTB	@R0		; ЕСЛИ СТРОКА ПУСТАЯ, НАПЕЧАТАТЬ ИДЕНТ.
+	BNE	1$
+	MOV	#<-IDENT>,R0
+	NEG	R0
+	MOV	#104000,R1
+.$ADD=.
+	ADD	R1,@PC
+	.WORD	351		; ПОЛУЧАЕТСЯ 104351 - EMT 351 - .PRINT
+	MOV	#NOP,.$ADD
+	JMP	RECOVER
+
+1$:	BIS	(PC)+,@(PC)+
+..DEFPR==.
+	.WORD	L.ODD!L.CAL!L.LST!L.SIG,PARSWT
+	BIC	DISSWT,PARSWT	; ПОГАСИТЬ БИТЫ В PARSWT
+	BIS	#BAS$,CONFIG	; БАЗОВЫЕ ИНСТРУКЦИИ ДЕКОДИРУЮТСЯ ВСЕГДА
+	TST	BRKFLG		; УСТАНОВЛЕН ФЛАГ РАЗРЕШЕНИЯ ДИАЛОГА?
+	BEQ	FILES		; НЕТ
+	INC	TTYFLG		; ОБЯЗАТЕЛЬНО ВЫВОД НА ТЕРМИНАЛ
+	BIC	#L.LOC!L.NUM!L.CRF,PARSWT  ; ЗАПРЕТИТЬ НЕКОТОРЫЕ ВИДЫ РАБОТ
+	BIS	#C.LC!C.WRD!C.ASC!C.RAD!C.CMT,COMSWT	; ПОЛНЫЙ КОММЕНТАРИЙ
+............................................................
+;
+; ОТКРЫТИЕ ФАЙЛОВ
+;
+; INPUT/B	(+DIA INPUT,DIA OUTPUT)
+; INPUT		(+DIA INPUT,TI: OUTPUT)
+; OUTPUT=INPUT	(+DIA INPUT)
+;
+............................................................
+FILES:
+	.SERR
+	MOV	#INSPC,R5
+	TST	@R5
+	BEQ	2$		; НЕ УКАЗАНА ВХОДНАЯ СПЕЦИФИКАЦИЯ
+	CALL	FETCH
+	MOV	#3,R2
+	CALL	LOOKUP		; ОТКРЫТЬ ФАЙЛ .SAV/.TSK/.LDA
+	INC	R2		; ОСТАЛЬНОЕ ОТКРЫВАТЬ ПО 4-МУ КАНАЛУ
+	TST	BRKFLG
+	BEQ	1$		; БЕЗ ДИАЛОГА
+
+	MOV	OUTSPC+10,10(R5)	; РАЗМЕР ФАЙЛА
+	MOV	#<^RDIA>,6(R5)	; РАСШИРЕНИЕ - ВСЕГДА DIA2
+	CALL	FETCH		; ЗАГРУЗИТЬ ДРАЙВЕР
+	CALL	LOOKUP		; DIA INPUT
+	CALL	ENTER		; DIA OUTPUT (0-КАНАЛ)
+	BR	2$		; ВСЕ ОТКРЫЛИ, КОНЕЦ
+
+1$:	MOV	#<^RDIA>,6(R5)	; РАСШИРЕНИЕ DIA INPUT - DIA
+	CALL	LOOKUP		; DIA INPUT
+	MOV	SP,TTYFLG
+	MOV	#OUTSPC,R5
+	TST	@R5		; ФАЙЛ MAC НЕ УКАЗАН - ВЫВОД НА ТЕРМИНАЛ
+	BEQ	2$
+	CALL	FETCH		; ЗАГРУЗИТЬ ДРАЙВЕР
+	CALL	ENTER		; MAC OUTPUT
+	CLR	TTYFLG		; ВЫВОД В ФАЙЛ
+
+2$:	.HERR
+	MOV	LOCORE,CURMEL
+	.SETTOP #-2		; ВЗЯТЬ ПАМЯТЬ ДО КОНЦА
+	SUB	#4,R0
+	MOV	R0,HICORE	; УСТАНОВИТЬ ОГРАНИЧИТЕЛЬ
+	MOV	R0,CURMEH
+	TST	TSXFLG		; TSX?
+	BNE	3$
+	BIS	#SLED$,@#JSW	; ЗАПРЕЩЕНО ИСП. SL-TTYIN
+3$:	RETURN
+;
+; П/П ДЛЯ DECCSI
+;
+; ЗАГРУЗКА ДРАЙВЕРА
+;
+FETCH:
+	.FETCH	LOCORE,R5
+	BCC	1$
+	FATAL	E.FTCH
+1$:	MOV	R0,LOCORE
+	RETURN
+;
+; ОТКРЫТИЕ НОВОГО ФАЙЛА
+;
+ENTER:
+	.ENTER	#AREA,#0,R5,10(R5)
+	BCC	1$
+	FATAL	E.ENTR
+1$:	RETURN
+;
+; ОТКРЫТИЕ ВХОДНОГО ФАЙЛА
+;
+LOOKUP:
+	.LOOKUP	#AREA,R2,R5
+	RETURN
+;
+; ОБРАБОТКА КЛЮЧЕЙ С СИМВОЛИКОЙ RAD50
+; R1 -> УКАЗАТЕЛЬ НА ТАБЛИЦУ
+; R2 - ИМЯ В RAD50
+; R4,R5 - ИСПОЛЬЗ.
+
+TABLUP:
+	TST	(R3)+		; ФЛАГ УСТАНОВЛЕН?
+	BNE	1$		; ДА
+	CLR	@(R3)		; НЕТ, СТЕРЕТЬ ЗНАЧЕНИЕ КЛЮЧА
+	INC	-2(R3)		; УСТАНОВИТЬ ФЛАГ
+1$:	MOV	(R3)+,R5	; СОХР. АДРЕС
+	TST	R1		; УКАЗАНО ЗНАЧЕНИЕ?
+	BMI	2$		; ДА
+	MOV	@R3,R2		; УСТАНОВИТЬ ЗНАЧЕНИЕ ПО УМОЛЧАНИЮ
+2$:	TST	(R3)+		; ПРОПУСТИТЬ ЗНАЧЕНИЕ ПО УМОЛЧАНИЮ
+3$:	MOV	(R3)+,R4	; МНЕМОНИКА
+	BEQ	4$		; НУЛЬ - КОНЕЦ ТАБЛИЦЫ
+	CMP	R2,R4		; МНЕМОНИКА СОВПАДАЕТ?
+	BEQ	5$		; ДА
+	TST	(R3)+		; ПРОПУСТИТЬ МАСКУ
+	BR	3$		; ПОДОЛЖИТЬ ПОИСК
+4$:	SEC
+	RETURN
+5$:	BIS	@R3,@R5		; УСТАНОВИТЬ МАСКУ
+	CLC
+	RETURN
+
+	.END

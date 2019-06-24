@@ -1,0 +1,155 @@
+.INCLUDE /DECDFN/
+.MODULE DECCRF,RELEASE=V05,VERSION=01,COMMENT=<ВЫВОД ТАБЛИЦЫ ССЫЛОК>
+
+	.PSECT	DECCRF,I,RO
+............................................................
+;
+; ВЫВОД СПИСКА ПЕРЕКРЕСТНЫХ ССЫЛОК
+;
+............................................................
+DECCRF::
+	MOV	#CRFTXT,R0
+	MOV	#CURLIN,R2
+	CALL	MOVTXT
+	CALL	WR$LIN		; ВЫВЕСТИ ЗАГОЛОВОК
+	MOV	#CURLIN,R2
+	MOVB	#200,(R2)+	; ВЫВЕСТИ ПУСТУЮ СТРОКУ
+	CALL	WR$LIN
+
+	MOV	OVRNUM,R0	; ДЕКОДИРУЕМЫЙ СЕГМЕНТ
+	CALL	SETSEG
+	MOV	CURSGN,STREAM
+	MOV	CURSEG,LABSEG
+
+	MOV	#7.,NUMREF
+	MOV	#LSPNT,R5
+	MOV	#LT.DAT,R4	; ТИП МЕТОК ДЛЯ ВЫВОДА
+	CALL	PRLIST
+	MOV	#LT.LAB,R4	; ТИП МЕТОК ДЛЯ ВЫВОДА
+	CALL	PRLIST
+	MOV	#LT.JMP,R4	; ТИП МЕТОК ДЛЯ ВЫВОДА
+	CALL	PRLIST
+	MOV	#LT.JSR,R4	; ТИП МЕТОК ДЛЯ ВЫВОДА
+	CALL	PRLIST
+
+; ГЛОБАЛЬНЫЕ МЕТКИ
+	MOV	#6.,NUMREF
+	MOV	#LT.DAT+400,R4	; ТИП МЕТОК ДЛЯ ВЫВОДА
+	CALL	PRLIST
+	MOV	#LT.LAB+400,R4	; ТИП МЕТОК ДЛЯ ВЫВОДА
+	CALL	PRLIST
+	MOV	#LT.JMP+400,R4	; ТИП МЕТОК ДЛЯ ВЫВОДА
+	CALL	PRLIST
+	MOV	#LT.JSR+400,R4	; ТИП МЕТОК ДЛЯ ВЫВОДА
+	CALL	PRLIST
+	
+	MOV	#7.,NUMREF
+	MOV	SP,R1
+	CLR	R4
+	MOV	#TXTPNT,R5
+1$:	MOV	@R5,R5
+	BEQ	2$
+	CALL	LSTTXT
+	BR	1$
+
+2$:	TST	R1
+	BNE	5$
+	MOV	#CURLIN,R2
+	MOVB	#200,(R2)+	; ВЫВЕСТИ ПУСТУЮ СТРОКУ
+	CALL	WR$LIN
+
+5$:	MOV	#6.,NUMREF
+	MOV	#400,R4		; ВЫВОДИТЬ С НОМЕРАМИ СЕГМЕНТОВ
+	MOV	#GLBPNT,R5
+	
+3$:	MOV	@R5,R5
+	BEQ	4$
+	CALL	LSTTXT
+	BR	3$
+
+4$:	RETURN
+
+............................................................
+;
+; П/П ДЛЯ ВЫВОДА СПИСКОВ ССЫЛОК
+;
+............................................................
+PRLIST::
+	MOV	R5,-(SP)
+	MOV	SP,R1
+1$:	MOV	@R5,R5
+	BEQ	2$
+	CMP	4(R5),R4	; LABTYP
+	BNE	1$
+	CALL	LSTLS
+	BR	1$
+2$:	TST	R1		; ВЫВОДИЛИ ХОТЯ БЫ ОДНУ СТРОКУ?
+	BNE	3$		; НЕТ
+	MOV	#CURLIN,R2
+	MOVB	#200,(R2)+	; ВЫВЕСТИ ПУСТУЮ СТРОКУ
+	CALL	WR$LIN
+3$:	MOV	(SP)+,R5
+	RETURN
+
+LSTLS:
+	MOV	#CURLIN,R2
+	MOV	2(R5),R0
+	CALL	OUTLS		; ВЫВЕСТИ МЕТКУ
+	MOV	6(R5),R1	; LINK СПИСКА ССЫЛОК
+	BR	COMLST
+LSTTXT:
+	MOV	#CURLIN,R0
+	MOV	R5,R1
+	CMP	(R1)+,(R1)+	; УСТАНОВИТЬ НА ИМЯ
+	CALL	R50ASC		; ПРЕОБР. В ASCII
+	MOV	R0,R2
+	CALL	DELSP
+	MOV	10(R5),R1	; LINK СПИСКА ССЫЛОК
+COMLST:
+	MOV	NUMREF,R3	; СЧЕТЧИК ССЫЛОК НА СТРОКЕ
+	MOVB	#11,(R2)+	; ОТДЕЛИТЬ ИМЯ МЕТКИ
+	MOV	2(R5),R0	; ЗНАЧЕНИЕ МЕТКИ
+	CALL	OCONV
+	CALL	MOVTXT		; ВЫВЕСТИ
+	TST	R1		; LINK СПИСКА ССЫЛОК
+	BEQ	7$
+
+	BR	2$
+1$:	DEC	R3
+	BNE	3$
+	CALL	WR$LIN		; ВЫВЕСТИ СТРОКУ
+	MOV	#CURLIN,R2
+	MOVB	#11,(R2)+	; ОТДЕЛИТЬ ЗНАЧЕНИЕ МЕТКИ
+2$:	MOVB	#11,(R2)+	; ОТДЕЛИТЬ ЗНАЧЕНИЕ МЕТКИ
+	MOV	NUMREF,R3	; СЧЕТЧИК ССЫЛОК НА СТРОКЕ
+	BR	4$
+3$:	MOVB	#40,(R2)+	; ОТДЕЛИТЬ ДВУМЯ ПРОБЕЛАМИ
+	MOVB	#40,(R2)+
+4$:	MOVB	4(R1),R0	; ТИП ССЫЛКИ
+	MOVB	LBMNEM(R0),(R2)+
+	MOV	2(R1),R0	; АДРЕС ССЫЛКИ
+	CALL	FOCONV
+	CALL	MOVTXT
+
+	BIT	#400,R4		; ГЛОБАЛЬНЫЙ СИМВОЛ?
+	BEQ	6$		; НЕТ
+	MOVB	#40,(R2)+	; ОТДЕЛИТЬ ПРОБЕЛОМ
+	MOVB	5(R1),R0	; НОМЕР СЕГМЕНТА
+	CALL	FDCONV		; ПРЕОБРАЗОВАТЬ В ASCII
+	ADD	#3,R0		; ИСПОЛЬЗОВАТЬ ПОСЛ. 2 СИМВОЛА
+	CMPB	@R0,#'0		; ПОДАВИТЬ ВЕДУЩИЕ НУЛИ
+	BNE	5$
+	MOVB	#40,@R0
+5$:	CALL	MOVTXT		; ЗАСЛАТЬ СТРОКУ
+;	MOVB	#40,(R2)+	; ОТДЕЛЯТЬ МЕТКИ ТРЕМЯ ПРОБЕЛАМИ
+
+6$:	MOV	@R1,R1
+	BNE	1$
+7$:	CALLR	WR$LIN
+
+	.PSECT	CRFDAT,D,RW
+NUMREF:	.BLKW	1
+
+	.PSECT	DECTXT,D,RO
+CRFTXT:	.ASCIZ	<14>/ТАБЛИЦА ПЕРЕКРЕСТНЫХ ССЫЛОК/
+	.END

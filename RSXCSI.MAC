@@ -1,0 +1,394 @@
+.INCLUDE /DECDFN/
+.MODULE DECCSI,RELEASE=V05,VERSION=01,COMMENT=<ОБРАБОТКА CSI>
+
+.REM	\
+ВЫЗОВ:
+>RU DECT
+*OUTSPC!DIASPC=INSPC,DIASPC/SWITCHES	! STANDART CSI FORMAT
+
+РАСШИРЕНИЕ ПО УМОЛЧАНИЮ ДЛЯ ВХОДНОГО ФАЙЛА : .TSK
+РАСШИРЕНИЕ ПО УМОЛЧАНИЮ ДЛЯ ФАЙЛА ДИАЛОГА : .DIA
+РАСШИРЕНИЕ ПО УМОЛЧАНИЮ ДЛЯ ВЫХОДНОГО ФАЙЛА : .MAC
+
+LUNS:
+
+КЛЮЧИ:	СМ. DECT.HLP
+\
+
+TILUN	==	5
+INLUN	==	1
+IMGLUN	==	2
+OUTLUN	==	3
+CMDLUN	==	4
+TIEFN	==	TILUN
+INEFN	==	INLUN
+IMGEFN	==	IMGLUN
+OUTEFN	==	OUTLUN
+CMDEFN	==	CMDLUN
+
+	.MCALL	ALUN$S	EXIT$S	EXTK$S	GCMLB$	GCML$
+	.MCALL	CSI$	CSI$1	CSI$2	CSI$SW	CSI$SV	CSI$ND
+	.MCALL	FDBDF$	FDAT$A	FDRC$A	FDOP$A	FDBK$A	FDBF$A
+	.MCALL	FSRSZ$	FDOF$L	NMBLK$	FINIT$
+
+	CSI$
+	FDOF$L
+
+	.PSECT	FILDAT,D,RW
+
+FDBIN::	FDBDF$
+	FDAT$A	R.VAR,FD.CR,80.
+	FDRC$A	,CURLIN,80.
+	FDOP$A	INLUN,,,FO.RD
+	FDBF$A	INEFN
+FDBOUT::FDBDF$
+	FDAT$A	R.VAR,FD.CR,200.
+	FDRC$A	,CURLIN,200.
+	FDOP$A	OUTLUN,,,FO.WRT
+	FDBF$A	OUTEFN
+IMGFDB::FDBDF$
+	FDAT$A	R.FIX,,512.
+	FDRC$A	FD.RWM
+	FDBK$A	INBUF,512.,,IMGEFN
+	FDOP$A	IMGLUN,,,FO.RD
+
+DEFMAC::NMBLK$	,MAC,0,SY,0
+.IF	DF,D$SAV
+DEFIMG::NMBLK$	,SAV,0,SY,0
+.IFF
+DEFIMG::NMBLK$	,TSK,0,SY,0
+.ENDC
+MACFNB::.BLKB	S.FNB
+IMGFNB::.BLKB	S.FNB
+INDFNB::.BLKB	S.FNB
+OUDFNB::.BLKB	S.FNB
+CSIBLK::.BLKB	C.SIZE
+CMDIBL::GCMLB$	1,DCT,CSISTR,CMDLUN,,82.
+
+	.PSECT	DECDAT,D
+DISSWT:	.BLKW	1	; БИТЫ ЗАПРЕЩЕНИЯ PARSWT
+PRSVAL:	.BLKB	18.
+PARVAL:	.BLKB	18.
+DBLVAL:	.BLKB	18.
+CMTVAL:	.BLKB	18.
+
+HILIM=:.+2
+	.LIMIT
+
+............................................................
+;
+; ТАБЛИЦА КЛЮЧЕЙ
+;
+............................................................
+.MACRO	SWITCH	MNEM	SUBR
+MNEM'MASK=:...VAL
+...VAL=...VAL*2
+.WORD	SUBR
+.ENDM	SWITCH
+...VAL=1
+SWTBL:
+
+.MACRO	ENDTAB
+	.WORD	0	; КОНЕЦ ТАБЛИЦЫ
+.ENDM	ENDTAB
+
+SWITCH	P	SW.PRS
+SWITCH	E	SW.PAR
+SWITCH	D	SW.DBL
+SWITCH	C	SW.CMT
+SWITCH	B	SW.BRK
+SWITCH	O	SW.OVN
+SWITCH	S	SW.SGD
+SWITCH	Z	SW.DBG
+	ENDTAB
+
+CSWTBL:
+
+CSI$SW	P	PMASK,,SET,,PRSSVT
+CSI$SW	E	EMASK,,SET,,PARSVT
+CSI$SW	D	DMASK,,SET,,DBLSVT
+CSI$SW	C	CMASK,,SET,,CMTSVT
+CSI$SW	B	BMASK,,SET
+CSI$SW	O	OMASK,,SET,,OVNSVT
+CSI$SW	S	SMASK,,SET
+CSI$SW	Z	ZMASK,,SET
+	CSI$ND
+
+PRSSVT:	CSI$SV	ASCII,PRSVAL,3
+	CSI$SV	ASCII,PRSVAL+3.,3
+	CSI$SV	ASCII,PRSVAL+6.,3
+	CSI$SV	ASCII,PRSVAL+9.,3
+	CSI$SV	ASCII,PRSVAL+12.,3
+	CSI$SV	ASCII,PRSVAL+15.,3
+	CSI$ND
+
+PARSVT:	CSI$SV	ASCII,PARVAL,3
+	CSI$SV	ASCII,PARVAL+3.,3
+	CSI$SV	ASCII,PARVAL+6.,3
+	CSI$SV	ASCII,PARVAL+9.,3
+	CSI$SV	ASCII,PARVAL+12.,3
+	CSI$SV	ASCII,PARVAL+15.,3
+	CSI$ND
+
+DBLSVT:	CSI$SV	ASCII,DBLVAL,3
+	CSI$SV	ASCII,DBLVAL+3.,3
+	CSI$SV	ASCII,DBLVAL+6.,3
+	CSI$SV	ASCII,DBLVAL+9.,3
+	CSI$SV	ASCII,DBLVAL+12.,3
+	CSI$SV	ASCII,DBLVAL+15.,3
+	CSI$ND
+
+CMTSVT:	CSI$SV	ASCII,CMTVAL,3
+	CSI$SV	ASCII,CMTVAL+3.,3
+	CSI$SV	ASCII,CMTVAL+6.,3
+	CSI$SV	ASCII,CMTVAL+9.,3
+	CSI$SV	ASCII,CMTVAL+12.,3
+	CSI$SV	ASCII,CMTVAL+15.,3
+	CSI$ND
+
+OVNSVT:	CSI$SV	NUMERIC,OVRNUM,2
+	CSI$ND
+
+.INCLUDE /DECSWT.INC/
+
+	.PSECT	DECCSI,I,RO
+DECCSI::
+	FINIT$
+	CLR	PARTBL
+	CLR	DISTBL
+	CLR	COMTBL
+	CLR	CNFTBL
+	CLR	DISSWT
+	CLR	CNFFLG
+	MOV	#CSIBLK,R0
+	MOV	#C.SIZE,R1
+1$:	CLRB	(R0)+
+	SOB	R1,1$
+	MOV	#18.,R0
+	MOV	#PRSVAL,R1
+	MOV	#PARVAL,R2
+	MOV	#DBLVAL,R3
+	MOV	#CMTVAL,R4
+2$:	CLRB	(R1)+
+	CLRB	(R2)+
+	CLRB	(R3)+
+	CLRB	(R4)+
+	SOB	R0,2$
+
+	MOV	SP,TTYFLG	; УСТАНОВИТЬ ВЫВОД НА ТЕРМИНАЛ ПО УМОЛЧ.
+
+CLR	LSTP1		;DEBUG
+	MOV	(PC)+,@(PC)+
+	.WORD	L.ODD!L.CAL!L.LST!L.SIG,PARSWT
+	MOV	(PC)+,@(PC)+
+..DEFCM==.
+	.WORD	C.LC!C.ASC,COMSWT
+	MOV	(PC)+,@(PC)+
+..DEFCN==.
+	.WORD	P40B$!KERNL$!EIS$!LSI$,CONFIG
+
+	ALUN$S	#TILUN,#"TI
+	ALUN$S	#CMDLUN,#"TI
+	DIR$	#DETTTY			; ОТКРЕПИТЬ ТЕРМИНАЛ, ЕСЛИ ОН ПРИКРЕП.
+RECOV:	GCML$	#CMDIBL,#RSXPRM,#7	; СЧИТАТЬ КОМАНДНУЮ СТРОКУ
+	BCC	2$
+	BITB	#GE.EOF,G.ERR(R0)	; КОНЕЦ КОМАНДНОГО ФАЙЛА?
+	BEQ	1$			; НЕТ
+	EXIT$S				; ЗАВЕРШИТЬ ЗАДАЧУ
+1$:	FATAL	E.CMI
+
+2$:	TST	CMDIBL+G.CMLD
+	BEQ	RECOV
+	CSI$1	#CSIBLK,CMDIBL+G.CMLD+2,CMDIBL+G.CMLD
+	BCS	5$			; СИНТАКСИЧЕСКА ОШИБКА
+; INPUT/B	(+DIA INPUT,DIA OUTPUT)
+; INPUT		(+DIA INPUT,TI: OUTPUT)
+; OUTPUT=INPUT	(+DIA INPUT)
+
+	MOVB	#CS.OUT,C.TYPR(R0)	; РАЗБИРАЕМ ВЫХОДНУЮ СПЕЦИФИКАЦИЮ
+	MOV	#IMGFNB,R1
+	MOV	#DEFIMG,R3
+	BITB	#CS.EQU,C.STAT(R0)	; В СТРОКЕ ИМЕЕТСЯ СИМВОЛ '=' ?
+	BEQ	4$			; НЕТ
+	MOV	#MACFNB,R1
+	MOV	#DEFMAC,R3
+	CLR	TTYFLG			; ВЫВОД В ФАЙЛ
+4$:	CSI$2	,,#CSWTBL
+	BCS	5$			; СИНТАКСИЧЕСКА ОШИБКА
+	BITB	#CS.WLD!CS.MOR,C.STAT(R0)
+	BEQ	6$			; '*',',' - НЕ ДОПУСТИМЫ
+
+5$:	FATAL	E.CSI
+
+6$:	CALL	GETFNB			; ПОЛУЧИМ FNB MAC- ИЛИ TSK-ФАЙЛА
+	MOV	#CSIBLK,R0
+	BITB	#CS.EQU,C.STAT(R0)	; В СТРОКЕ ИМЕЕТСЯ СИМВОЛ '=' ?
+	BEQ	SWTPRS			; НЕТ, ВСЕ РАЗОБРАЛИ
+	MOVB	#CS.INP,C.TYPR(R0)	; MAC РАЗОБРАЛИ, РАЗБЕРЕМ TSK
+	CSI$2	,,#CSWTBL
+	BCS	5$			; СИНТАКСИЧЕСКА ОШИБКА
+	BITB	#CS.WLD!CS.MOR,C.STAT(R0)
+	BNE	5$			; '*',',' - НЕ ДОПУСТИМЫ
+	MOV	#IMGFNB,R1
+	MOV	#DEFIMG,R3
+	CALL	GETFNB			; ПОЛУЧИТЬ FNB TSK-ФАЙЛА
+
+; РАЗБОР КЛЮЧЕЙ
+SWTPRS:
+	MOV	CSIBLK+C.MKW1,R5	; МАСКА КЛЮЧЕЙ
+	MOV	#SWTBL,R4		; ТАБЛИЦА П/П
+1$:	MOV	(R4)+,R0
+	BEQ	ENDCSI			; КОНЕЦ ТАБЛИЦЫ
+	ROR	R5
+	BCC	1$			; БИТ НЕ УСТАНОВЛЕН - НЕ ВЫЗЫВ. П/П
+	CALL	@R0			; ВЫЗВАТЬ П/П ОБРАБ. КЛЮЧА
+	BR	1$
+;
+; П/П ОБРАБОТКИ КЛЮЧЕЙ
+;
+SW.BRK:	MOV	SP,BRKFLG	; BREAK
+	RETURN
+
+SW.DBG:	INC	LSTP1		; DEBUG+++
+	RETURN
+
+SW.SGD:	MOV	SP,SGDSWT	; SEGMENT DEFINITION
+	MOV	SP,SGDFLG
+	RETURN
+
+SW.PRS:
+	MOV	SP,CNFFLG
+	MOV	#PRSVAL,R1
+	MOV	#CNFTBL,R3	; PROCESSOR
+	BR	TBLUP
+
+SW.PAR:	MOV	#PARVAL,R1
+	MOV	#PARTBL,R3	; ENABL
+	BR	TBLUP
+
+SW.CMT:	MOV	#CMTVAL,R1
+	MOV	#COMTBL,R3	; COMMENT
+	BR	TBLUP
+
+SW.DBL:	MOV	#DBLVAL,R1
+	MOV	#DISTBL,R3	; DISABL
+TBLUP:	TSTB	@R1		; КЛЮЧ БЕЗ ПАРАМЕТРОВ - ЗНАЧЕНИЕ ПО УМОЛЧ.
+	BEQ	1$
+2$:	MOV	R1,R0
+	CALL	ASCR50		; ПРЕОБРАЗОВАТЬ В RAD50
+	MOV	R50NAM,R2
+	BEQ	ERRSW		; НЕДОП. ВИД КЛЮЧА В RAD50
+1$:	CALL	TABLUP
+	BCS	ERRSW
+	ADD	#3,R1
+	TSTB	@R1
+	BNE	2$
+	RETURN
+
+SW.OVN:				; OVERLAY
+	RETURN
+
+ERRSW:	FATAL	E.SWT		; ОШИБОЧНЫЙ КЛЮЧ
+
+
+ENDCSI:
+	BIS	(PC)+,@(PC)+
+..DEFPR==.
+	.WORD	L.ODD!L.CAL!L.LST!L.SIG,PARSWT
+	BIC	DISSWT,PARSWT	; ПОГАСИТЬ БИТЫ В PARSWT
+	BIS	#BAS$,CONFIG	; БАЗОВЫЕ ИНСТРУКЦИИ ДЕКОДИРУЮТСЯ ВСЕГДА
+	TST	BRKFLG		; УСТАНОВЛЕН ФЛАГ РАЗРЕШЕНИЯ ДИАЛОГА?
+	BEQ	FILES		; НЕТ
+	MOV	SP,TTYFLG	; УСТАНОВИТЬ ВЫВОД НА ТЕРМИНАЛ
+	BIC	#L.LOC!L.NUM!L.CRF,PARSWT ; ЗАПРЕТИТЬ НЕКОТОРЫЕ ВИДЫ РАБОТ
+	BIS	#C.LC!C.WRD!C.ASC!C.RAD!C.CMT,COMSWT	; ПОЛНЫЙ КОММЕНТАРИЙ
+;
+; ПОДГОТОВКА ФАЙЛОВ .DIA
+; ИМЯ ФАЙЛА, УСТРОЙСТВО, DIR БЕРЕТСЯ ИЗ IMGFNB, ТИП - .DIA
+;
+FILES:
+	MOV	#INDFNB,R0	; ПЕРЕПИШЕМ IMGFNB В INDFNB И В OUDFNB
+	MOV	#OUDFNB,R1
+	MOV	#IMGFNB,R2
+	MOV	#S.FNBW,R3
+1$:	MOV	@R2,(R0)+
+	MOV	(R2)+,(R1)+
+	SOB	R3,1$
+	MOV	#^RDIA,INDFNB+N.FTYP	; ЗАСЛАТЬ РАСШИРЕНИЕ .DIA
+	MOV	#^RDIA,OUDFNB+N.FTYP
+;
+; ВЫДЕЛИТЬ ПАМЯТЬ
+;
+EXTMEM::
+	EXTK$S				; ОТМЕНИТЬ РАСШИРЕНИЕ ЗАДАЧИ
+	BCC	1$
+9$:	FATAL	E.CKP
+1$:	MOV	HILIM,R1		; ВЕРХНИЙ АДРЕС ПАМЯТИ
+	ADD	#77,R1
+	BIC	#77,R1
+	MOV	R1,LOCORE		; НИЖНИЙ АДРЕС ПАМЯТИ
+	MOV	#177700,R2		; НАИБОЛЬШИЙ АДРЕС ПАМЯТИ
+3$:	MOV	R2,R0
+	CALL	EXTASK
+	BCC	2$
+	CMPB	$DSW,#IE.ALG
+	BNE	9$
+	SUB	#20000,R2		; УМЕНЬШИМ РАЗМЕР НА ОДИН APR
+	BEQ	9$
+	BR	3$
+2$:	MOV	R2,HICORE
+	MOV	LOCORE,CURMEL
+	MOV	HICORE,CURMEH
+	DIR$	#TTCRLF
+	RETURN				; КОНЕЦ ОБРАБОТКЕ .CSI
+
+EXTASK:
+	SUB	R1,R0			; РАСШИРЕНИЕ ЗАДАЧИ В БЛОКАХ
+	CLC
+	ROR	R0
+	ASH	#-5,R0
+	EXTK$S	R0			; РАСШИРИТЬ ЗАДАЧУ
+	RETURN
+;
+; ПОЛУЧЕНИЕ FNB
+;
+GETFNB:
+	MOV	#FDBIN,R0
+	MOV	#CSIBLK+C.DSDS,R2
+	CALL	.PARSE			; РАЗОБРАТЬ ИМЯ ФАЙЛА
+	BCS	1$
+	RETURN
+1$:	FATAL	E.PARS
+;
+; ОБРАБОТКА КЛЮЧЕЙ С СИМВОЛИКОЙ RAD50
+; R3 -> УКАЗАТЕЛЬ НА ТАБЛИЦУ
+; R2 - ИМЯ В RAD50
+; R4,R5 - ИСПОЛЬЗ.
+
+TABLUP:
+	JSR	R1,$SAVE5
+	TST	(R3)+		; ФЛАГ УСТАНОВЛЕН?
+	BNE	1$		; ДА
+	CLR	@(R3)		; НЕТ, СТЕРЕТЬ ЗНАЧЕНИЕ КЛЮЧА
+	INC	-2(R3)		; УСТАНОВИТЬ ФЛАГ
+1$:	MOV	(R3)+,R5	; СОХР. АДРЕС
+	TSTB	@R1		; УКАЗАНО ЗНАЧЕНИЕ?
+	BNE	2$		; ДА
+	MOV	@R3,R2		; УСТАНОВИТЬ ЗНАЧЕНИЕ ПО УМОЛЧАНИЮ
+2$:	TST	(R3)+		; ПРОПУСТИТЬ ЗНАЧЕНИЕ ПО УМОЛЧАНИЮ
+3$:	MOV	(R3)+,R4	; МНЕМОНИКА
+	BEQ	4$		; НУЛЬ - КОНЕЦ ТАБЛИЦЫ
+	CMP	R2,R4		; МНЕМОНИКА СОВПАДАЕТ?
+	BEQ	5$		; ДА
+	TST	(R3)+		; ПРОПУСТИТЬ МАСКУ
+	BR	3$		; ПОДОЛЖИТЬ ПОИСК
+4$:	SEC
+	RETURN
+5$:	BIS	@R3,@R5		; УСТАНОВИТЬ МАСКУ
+	CLC
+	RETURN
+;
+; ВЫДЕЛИТЬ ПАМЯТЬ ПОД БЛОЧНЫЙ БУФФЕР FCS
+;
+	FSRSZ$	1
+	.END

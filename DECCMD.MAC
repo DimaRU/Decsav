@@ -1,0 +1,527 @@
+.INCLUDE /DECDFN/
+.MODULE DECCMD,RELEASE=V05,VERSION=12,COMMENT=<ВВОД/ВЫВОД И ОБРАБОТКА КОМАНД>
+
+.REM	\
+
+
+   ФОРМАТ СПИСКА КОМАНД:
+	-----------------
+	!     LINK	!   C$LINK
+	-----------------
+	!      LC	!   C$LC
+	-----------------
+	! NO. W.!  CMD	!   C$CMD,C$NUM
+	-----------------
+	! ДОП. СЛОВА.	!   C$PARM
+	-----------------
+		.	    C$PARM+2
+		.
+		.
+
+\
+	.PSECT	CMDDAT,D
+CMDBUF:: .BLKW	2+40.
+
+	.PSECT	DECCMD,RO,I
+........................................................................
+;
+; П/П ПРОВЕРКИ НА ПРЕРЫВАНИЕ НА ДИАЛОГ
+;
+........................................................................
+TSTBRK::
+	TST	CURBRK		; СЕКЦИЯ УЖЕ НАХОДИТСЯ В ДИАЛОГЕ?
+	BGT	RETTST		; ДА, ВОЗВРАТ
+	MOV	CURSEG,R0
+	CMP	MACLC,O$MARK(R0); ДОШЛИ ДО ТОЧКИ ОТМЕТКИ?
+	BEQ	SETBRK		; ДА
+	CALL	TS$TTY		; ОПРОСИТЬ ТЕРМИНАЛ НА ПРЕР.
+	BCC	SETBRK		; ПРОИЗОШЛО ПРЕР.
+	MOV	BRKRSN,R0	; ПРИЧИНА ВХОДА В ДИАЛОГ
+	ASL	R0		; ИНДЕКС
+	JMP	@$BRKTB(R0)
+SETBRK:	TST	CURBRK
+	BNE	1$
+	TST	BRKRSN
+	BEQ	2$
+1$:	MOV	CURBRK,OLDBRK	; СОХРАНИМ ПРЕД. СОСТ
+2$:	MOV	#1,CURBRK	; УСТАНОВИМ ФЛАГ ДИАЛОГА
+RETTST:	RETURN			; ВОЗВРАТ
+
+	.PSECT	CMDDAT,D
+$BRKTB::
+	.WORD	EOF
+	.WORD	REF
+	.WORD	DINT
+	.WORD	BADAD
+	.WORD	ODDAD
+	.WORD	LINS
+	.WORD	FBYT
+	.WORD	FWRD
+	.WORD	FINS
+
+	.PSECT	DECCMD,RO,I
+EOF:	RETURN
+DINT:
+	BIT	#N.DINT,INFORM
+	BNE	SETBRK
+	RETURN
+BADAD:
+	BIT	#N.BAD,INFORM
+	BNE	SETBRK
+	RETURN
+ODDAD:
+	BIT	#N.ODD,INFORM
+	BNE	SETBRK
+	RETURN
+;
+; ПОИСК ИНСТР., СТОЯЩИХ ПОСЛЕ ИНСТРУКЦИИ БЕЗУСЛОВНОЙ ПЕРЕДАЧИ УПРАВЛЕНИЯ
+; (RTI,JMP,...) , НА КОТОРЫЕ НЕТ ССЫЛКИ
+;
+LINS:
+	BIT	#$LBINS,LSTTYP
+	BNE	1$
+	RETURN
+1$:	MOV	#GLBPN1,R0	; АДРЕС ТАБЛИЦЫ ГЛОБ. МЕТОК
+	CALL	TSTREF		; ИСКАТЬ
+	MOV	#TXTPN1,R0	; АДРЕС ТАБЛИЦЫ ГЛОБ. МЕТОК
+	CALL	TSTREF		; ИСКАТЬ
+	MOV	#LSPN1,R0	; АДРЕС ТАБЛИЦЫ ЛОК. СИМВОЛОВ.
+	CALL	TSTREF		; ИСКАТЬ
+	MOV	#LLPN1,R0	; АДРЕС ТАБЛИЦЫ ЛОК. МЕТОК
+	CALL	TSTREF		; ИСКАТЬ
+	BR	SETBRK		; НЕ НАШЛИ НЕ ОДНОЙ ССЫЛКИ, ПРЕРВЕМ
+TSTREF:
+	MOV	@R0,R1		; ВОЗЬМЕМ ЭЛЕМЕНТ
+	BEQ	1$		; НИЧЕГО НЕТ
+	CMP	2(R1),MACLC	; МЕНЬШЕ АДРЕСА ТЕК. СТРОКИ?
+	BHI	1$		; БОЛЬШЕ, МЕТКИ К ИНСТР. НЕТ
+	BEQ	9$		; ЕСТЬ МЕТКА
+	MOV	@R1,@R0		; МЕНЬШЕ, ОБНОВИТЬ УКАЗАТЕЛЬ
+	BR	TSTREF		; ПРОДОЛЖИТЬ ПОИСК
+1$:	RETURN
+9$:	TST	(SP)+		; ВОЗВРАТ ИЗ TSTBRK, ЕСТЬ МЕТКА
+	RETURN
+
+REF:
+	MOV	#LABREF,R5
+2$:	CMP	R5,L.R.PN
+	BHIS	1$
+	CMP	REFLC,(R5)+
+	BNE	2$
+	BR	SETBRK
+1$:	RETURN	
+FWRD:
+	MOV	#LINBYT,R5
+	MOV	L.B.PN,R1
+	SUB	R5,R1
+	ASR	R1
+	BEQ	3$
+1$:	CMP	TGTWRD,(R5)+
+	BEQ	SETBRK
+	SOB	R1,1$
+3$:	RETURN
+FBYT:
+	MOV	#LINBYT,R5
+	MOV	L.B.PN,R1
+	SUB	R5,R1
+1$:	CMPB	TGTBYT,(R5)+
+	BEQ	SETBRK
+	SOB	R1,1$
+3$:	RETURN
+FINS:
+	CMP	INSPOS,TGTINS
+	BEQ	SETBRK
+	RETURN
+............................................................
+;
+; П/П ДИАЛОГА
+;
+............................................................
+DIAL::
+	CALL	PUT$LIN
+GET:	MOV	#CURLIN,R2
+	MOV	CURCMD,R5	; CMD ADDR
+	MOV	CURSEG,R0
+	CMP	MACLC,O$MARK(R0); ДОШЛИ ДО ТОЧКИ ОТМЕТКИ?
+	BNE	1$		; НЕТ
+	CLR	MCRFLG		; ПРЕКРАТИТЬ ВЫПОЛНЕНИЕ MACRO
+1$:	TST	MCRFLG		; ИДЕТ ВЫПОЛНЕНИЕ MACRO?
+	BGT	9$		; ДА, ВВЕСТИ КОМАНДУ ИЗ БУФЕРА
+	MOVB	C$CMD(R5),R4	; CMD
+	MOV	#C.MN.T,R0
+2$:	CMPB	(R0)+,R4
+	BEQ	4$
+3$:	TSTB	(R0)+
+	BNE	3$
+	BR	2$
+4$:	CALL	MOVTXT
+	MOV	CURSEG,R0
+	CMP	MACLC,O$MARK(R0); ДОШЛИ ДО ТОЧКИ ОТМЕТКИ?
+	BNE	5$		; НЕТ
+	MOV	#MKTXT,R0
+	CALL	MOVTXT
+5$:	MOVB	#':,(R2)+
+	BIT	#1,@R5
+	BNE	6$
+	CMP	C$LC(R5),MACLC
+	BNE	6$
+	MOVB	#'>,-1(R2)
+6$:	MOVB	#40,(R2)+
+	MOVB	#200,@R2
+	MOV	#CURLIN,R0	; ПОДСКАЗКА В CURLIN
+	CALL	RD$PRM		; СЧИТАТЬ СТРОКУ С ТЕРМИНАЛА В CMDLIN С ПОДСК.
+
+	TST	MCRFLG		; ЗАПИСЬ MACRO НЕ ВКЛЮЧЕНА
+	BEQ	10$		; ДА
+	MOV	MCRPNT,R2	; ПЕРЕСЛАТЬ СТРОКУ В БУФЕР MACRO
+	MOV	#CMDLIN,R0
+7$:	MOVB	(R0)+,(R2)+
+	BEQ	8$		; КОНЕЦ СТРОКИ
+	CMP	R2,MCBEND	; ВЫХОДИТ ЗА ГРАНИЦУ БУФЕРА MACRO?
+	BHIS	ERRM		; ПЕРЕПОЛНЕНИЕ БУФЕРА MACRO
+	BR	7$
+8$:	MOV	R2,MCRPNT
+	BR	10$
+9$:	MOV	MCRPNT,R0	; ОТКУДА
+	MOV	#CMDLIN,R2	; КУДА
+	CALL	MOVTXT		; ПЕРЕСЛАТЬ СТРОКУ
+	MOV	R0,MCRPNT	; ПРОДВИНУТЬ УКАЗАТЕЛЬ В БУФЕРЕ
+; ОТРАБОТКА КОМАНДЫ
+10$:	MOV	#CMDLIN,R0
+	TSTB	@R0
+	BEQ	11$		; КОМАНДЫ НЕ ПОСТУПИЛО
+	CALL	LINTRN		; ОТТРАНСЛИРОВАТЬ СТРОКУ
+	BCS	ERRC
+
+	MOV	MACLC,CMDBUF+C$LC	; ЗАПИСАТЬ LC
+	MOV	#CMDBUF,R0
+	MOVB	C$CMD(R0),R1
+	SUB	#CM.WRK,R1
+	BGE	12$		; РАБОЧИЕ КОМАНДЫ
+	CALL	LOGCMD		; ЗАНЕСТИ В СПИСОК
+	MOV	MACLC,R0
+	CALL	RESLIN
+	TST	(PC)+		; ВОЗВРАТ С ДИАЛОГОМ
+11$:	SEC			; ВОЗВРАТ БЕЗ ДИАЛОГА
+	RETURN
+
+12$:	ASL	R1
+	JMP	@$WRKTB(R1)
+
+ERRC:	ERROR	E.SNTX
+	BR	GET
+ERRM:	CLR	MCRFLG
+	ERROR	E.MCR
+	BR	GET
+	.PSECT	CMDDAT,D
+$WRKTB::
+	.WORD	BRK
+	.WORD	TTY
+	.WORD	CONT
+	.WORD	BSI
+	.WORD	BEG
+	.WORD	GOTO
+	.WORD	DELC
+	.WORD	INSLAB
+	.WORD	INSREF
+	.WORD	COM
+	.WORD	EXIT
+	.WORD	QUIT
+	.WORD	MACRO
+	.WORD	MEND
+	.WORD	EXEC
+	.WORD	SHOW
+	.WORD	MARK
+	.WORD	GMARK
+	.WORD	SSGNAM
+	.WORD	NEWSEG
+.IF	NE,RSX11$
+	.WORD	PAUSE		; ВРЕМЕННО ВЫЙТИ В СИСТЕМУ
+.ENDC
+
+	.PSECT	DECCMD,RO,I
+............................................................
+;
+; ВЫВОД ПАРАМЕТРОВ
+;
+............................................................
+SHOW:
+	CALL	DECSHOW
+	BR	GT
+............................................................
+;
+; ПЕРЕХОД ПО АДРЕСУ
+;
+............................................................
+GOTO:
+	MOV	CMDBUF+C$PARM,R0
+GOTO1:
+	CMP	R0,L.ADDR
+	BLO	1$
+	CMP	R0,H.ADDR
+	BLO	REST
+1$:	ERROR	E.ADDR
+	BR	GT
+BEG:
+	MOV	L.ADDR,R0
+	BR	REST
+BSI:
+	MOV	#SV.INS,R0
+	CALL	GT.B.P
+	MOV	@R0,R0
+REST:	CALL	RESLIN
+	CLC
+	RETURN
+GMARK:
+	MOV	CURSEG,R0
+	MOV	O$MARK(R0),R0
+	BR	GOTO1
+DELC:	MOV	MACLC,R0
+	CALL	DELCMD
+	MOV	MACLC,R0
+	BR	REST
+INSLAB:
+	MOV	MACLC,R0
+	CLR	R4
+SETNAM:	CMPB	CMDBUF+C$NUM,#2
+	BGE	2$
+	CLR	CMDBUF+C$PARM		; ОБОЗНАЧИТЬ УДАЛЕНИЕ СИМВОЛА
+	CLR	CMDBUF+C$PARM+2
+2$:	MOV	CMDBUF+C$PARM,R50NAM
+	MOV	CMDBUF+C$PARM+2,R50NAM+2
+	TST	R4
+	BEQ	1$
+	CALL	PLGLB			; ЗАНЕСТИ В СПИСОК
+	BR	REPLIN
+1$:	CALL	PLTXT
+
+REPLIN:	MOV	MACLC,R0		; ВОЗВРАТ С ПОВТОРЕНИЕМ СТРОКИ
+	CALL	RESLIN
+	CLC				; ВОЗВРАТ С ДИАЛОГОМ
+	RETURN
+INSREF:
+	MOV	#1,R5
+	CMPB	CMDBUF+C$NUM,#1		; 1 ПАРАМЕТР?
+	BNE	2$			; НЕТ
+; УДАЛЕНИЕ ССЫЛКИ
+	MOV	CMDBUF+C$PARM,R5	; НОМЕР ССЫЛКИ НА УДАЛЕНИЕ
+	CLR	CMDBUF+C$PARM
+	CLR	CMDBUF+C$PARM+2
+	BR	3$
+2$:	CMPB	CMDBUF+C$NUM,#3		; 3 ПАРАМЕТРА?
+	BLT	1$			; МЕНЬШЕ
+	MOV	CMDBUF+C$PARM+4,R5	; 3-Й ПАРАМЕТР : ССЫЛКА
+3$:	CMP	R5,#L.R.SZ
+	BHI	ERRC
+1$:	DEC	R5
+	MOV	R5,R4
+	ASL	R5
+	ADD	#LABREF,R5
+	CMP	R5,L.R.PN
+	BHIS	ERRC
+	MOV	@R5,R0			; АДРЕС ССЫЛКИ
+	MOVB	REFSTM(R4),R1		; СЕГМЕНТ ОПРЕДЕЛЕНИЯ МЕТКИ
+	MOVB	REFTYP(R4),R4		; ТИП ССЫЛКИ (GLOBAL)
+	BR	SETNAM
+GT:	JMP	GET
+; УСТАНОВКА ИМЕНИ СЕГМЕНТА
+SSGNAM:
+	CMPB	CMDBUF+C$NUM,#2
+	BNE	ERRC
+	MOV	CMDBUF+C$PARM,SEGNAM
+	MOV	CMDBUF+C$PARM+2,SEGNAM+2
+	MOV	CURSEG,R0
+	MOV	CMDBUF+C$PARM,O$NAME(R0)
+	MOV	CMDBUF+C$PARM+2,O$NAME+2(R0)
+	JMP	GET
+; УСТАНОВКА СЕГМЕНТА ДЛЯ ДЕКОДИРОВАНИЯ
+NEWSEG:
+	TSTB	CMDBUF+C$NUM
+	BEQ	ERRSEG
+	CMP	CMDBUF+C$PARM,OVRCNT
+	BHI	ERRSEG
+	MOV	CMDBUF+C$PARM,R0
+	CALL	SETSEG		; УСТАНОВИТЬ НОВЫЙ СЕГМЕНТ
+	BIT	#L.MEM,PARSWT
+	BEQ	3$		; ПАМЯТЬ НЕ ЭКОНОМИМ
+	CLR	LSPNT		; СБРОСИТЬ УКАЗАТЕЛИ НА СПИСКИ МЕТОК
+	CLR	LLPNT
+	MOV	HICORE,CURMEH	; ОЧИСТИТЬ ПАМЯТЬ МЕТОК
+	CLR	D.PASS		; PASS 2
+	CALL	INITPAS
+	CALL	DECODE		; ЗАПУСТИТЬ ПРОХОД ПО СБОРУ МЕТОК ДЛЯ ТЕК.СЕГ.
+	MOV	#1,D.PASS	; PASS 3
+3$:	CALL	INITPAS		; ИНИЦИАЛИЗИРОВАТЬ ПРОХОД
+	MOV	L.ADDR,CURLC
+	MOV	L.ADDR,MACLC
+	MOV	CURSEG,R0
+	MOV	O$MACL(R0),R0
+	JMP	GOTO1
+ERRSEG:	ERROR	E.SEGM
+	BR	REPLIN
+; УСТАНОВКА КОММЕНТАРИЯ
+COM:
+	MOV	R0,R5
+	CALL	GETBIT
+	MOV	R0,COMSWT
+	BR	REPLIN		; ВОЗВРАТ С ПОВТОРЕНИЕМ СТРОКИ
+; НАЧАЛО ЗАПИСИ MACRO
+MACRO:
+	MOV	MCRBUF,MCRPNT
+	MOV	MCRBUF,MCREND
+	MOV	#-1,MCRFLG	; УСТАНОВИТЬ ФЛАГ ЗАПИСИ MACRO
+	BR	GT
+MEND:	TST	MCRFLG
+	BMI	1$		; КОНЕЦ ЗАПИСИ МАКРО
+	DEC	MCRCNT		; ИНАЧЕ, КОНЕЦ ВЫПОЛНЕНИЯ МАКРО
+	BGT	EXEC1		; ПРОДОЛЖИМ ВЫПОЛНЕНИЕ ПО СЧЕТЧИКУ
+1$:	MOV	MCRPNT,MCREND	; КОНЕЦ ЗАПИСИ МАКРО
+	CLR	MCRFLG		; СБРОСИМ ФЛАГ ОБРАБОТКИ MACRO
+	BR	GT		; ВВЕСТИ СЛЕД. КОМАНДУ
+;  ВЫПОЛНЕНИЕ MACRO
+EXEC:	CLR	MCRCNT
+	TSTB	CMDBUF+C$NUM
+	BEQ	EXEC1
+	MOV	CMDBUF+C$PARM,MCRCNT
+EXEC1:	CMP	MCREND,MCRBUF
+	BNE	1$
+	JMP	ERRM		; НЕТ MACRO
+1$:	MOV	SP,MCRFLG
+	MOV	MCRBUF,MCRPNT
+	BR	GT
+CONT:	TST	BRKRSN		; EOF - ПРЕД. TEMA?
+	BNE	1$		; НЕТ
+	MOV	OLDRSN,BRKRSN	; ВОССТАНОВИТЬ ТЕМУ ПОИСКА
+1$:	MOV	OLDBRK,CURBRK	; ПРОДОЛЖИТЬ ПОИСК
+	SEC
+	RETURN
+TTY:	MOV	#-1,R3
+	BR	SBRK
+BRK:	CLR	R3		; ВЫПОЛНЕНИЕ BRK
+SBRK:	CALL	GETPRM
+	BCS	1$
+	MOV	R3,CURBRK
+	SEC
+	RETURN
+1$:	JMP	ERRC
+GETPRM:
+	MOVB	CMDBUF+C$NUM,R5
+	BNE	1$
+	TST	R3		; BRK?
+	BNE	4$		; НЕТ
+	MOV	BRKRSN,OLDRSN	; СОХРАНИТЬ BRKRSN
+4$:	CLR	BRKRSN
+	RETURN
+1$:	MOV	#CMDBUF+C$PARM,R4
+	MOV	(R4)+,R0
+	DEC	R5
+	BEQ	2$
+	ASL	R0
+	CLC
+	CALL	@$FNDTB(R0)
+2$:	MOV	CMDBUF+C$PARM,BRKRSN
+	TST	(PC)+
+3$:	SEC
+	RETURN
+.IF	NE,RSX11$
+PAUSE:	CALL	$PAUSE		; ВРЕМЕННО ВЫЙТИ
+	JMP	REPLIN		; ПОВТОРИТЬ СТРОКУ
+.ENDC
+
+	.PSECT	CMDDAT
+$FNDTB::
+	.WORD	PEOF
+	.WORD	PREF
+	.WORD	PDINT
+	.WORD	PBADAD
+	.WORD	PODDAD
+	.WORD	PLINS
+	.WORD	PFBYT
+	.WORD	PFWRD
+	.WORD	PFINS
+
+	.PSECT	DECCMD,RO,I
+PEOF:
+PDINT:
+PBADAD:
+PODDAD:
+PLINS:
+	RETURN
+; ЗАПУСК ПОИСКА ССЫЛКИ
+PREF:
+	MOV	@R4,REFLC
+	RETURN
+PFWRD:
+	MOV	@R4,TGTWRD
+	RETURN
+PFBYT:
+	MOV	@R4,TGTBYT
+	RETURN
+PFINS:
+	MOV	R4,R1
+	MOV	#CMDLIN,R0
+	CALL	R50ASC
+	MOV	#CMDLIN,R0
+	CALL	SRHINS
+	BCS	1$
+	MOV	R0,TGTINS
+	RETURN
+1$:	MOV	(SP),(SP)+
+	RETURN
+	
+; ОКОНЧАНИЕ ДЕКОДИРОВАНИЯ С ДИАЛОГОМ
+EXIT:
+	TST	(SP)+		; ВЫЙТИ ИЗ DIAL
+	RETURN			; ВЫЙТИ ИЗ ВТОРОГО ПРОХОДА
+; АВАРИЙНОЕ ОКОНЧАНИЕ ДИАЛОГА
+QUIT:
+	MOV	DECSP,SP	; ВОССТАНОВИТЬ СТЕК
+	CALL	IO$RST		; ЗАКРЫTЬ ФАЙЛЫ И Т.Д.
+	JMP	DECRST		; ПЕРЕЗАПУСТИТЬ ДЕКОДЕР
+; УСТАНОВКА ОТМЕТКИ
+MARK:	MOV	CURSEG,R0
+	MOV	MACLC,O$MARK(R0)
+	JMP	GET
+
+............................................................
+;
+; П/П ПОИСКА МНЕМОНКИ ИНСТРУКЦИИ В ТАБЛИЦАХ
+; ВХОД : R0 - > СТРОКА ОБРАЗЦА В ASCII, 6 СИМВОЛОВ
+............................................................
+SRHINS::
+	JSR	R1,$SAVE5
+	MOV	R0,R1
+	ADD	#6,R1
+1$:	CMPB	-(R1),#40
+	BNE	2$
+	MOVB	#200,@R1	; ДЛЯ СОВМЕСТИМОСТИ С TABLX, ЗАМЕН. 40 НА 200
+	BR	1$
+2$:	MOV	#TABL1,R1
+	CALL	SRH		; ВЫХОДИТ САМА
+	MOV	#TABL2,R1
+	CALL	SRH		; ВЫХОДИТ САМА
+	MOV	#FPUTBL,R1
+	CALL	SRH		; ВЫХОДИТ САМА
+	MOV	#CISTBL,R1
+	CALL	SRH		; ВЫХОДИТ САМА
+	SEC
+	RETURN
+SRH:
+	MOV	(R1)+,R5	; ЧИСЛО ЭЛЕМЕНТОВ В ТАБЛИЦЕ
+1$:	MOV	R1,R4		; ОБРАЗЕЦ
+	ADD	#10,R4
+	MOV	R0,R3		; МОДЕЛЬ
+	CMP	(R4)+,(R3)+
+	BNE	2$
+	CMP	(R4)+,(R3)+
+	BNE	2$
+	CMP	(R4)+,(R3)+
+	BEQ	3$		; ВСЕ СОВПАЛО
+2$:	ADD	#14.,R1
+	SOB	R5,1$
+	RETURN			; В ЭТОЙ ТАБЛИЦЕ НЕ НАШЛИ
+3$:	MOV	R1,R0		; АДРЕС ЭЛЕМЕНТА В ТАБЛИЦЕ		
+	TST	(SP)+		; АДРЕС ВОЗВРАТА В SRHINS,CLC
+	RETURN
+
+	.END

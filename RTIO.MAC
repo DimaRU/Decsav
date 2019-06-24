@@ -1,0 +1,378 @@
+.INCLUDE /DECDFN/
+.MODULE DECIO,RELEASE=V05,VERSION=12,COMMENT=<ОБЩИЕ П/П В/В>
+;
+; П/П ДЛЯ ДОВЫВОДА И УСТАНОВКИ УКАЗАТЕЛЕЙ
+;
+	.MCALL	.WRITW	.READW	.CLOSE	.WAIT	.ENTER	.SCCA	.SRESET
+	.MCALL	.TTYIN	.TTINR	.PRINT	.PURGE	.DSTAT	.TTYOUT
+
+ERRBYT	=	52
+JSW	=	44
+TTSPC$	=    10000
+TCBIT$	=      100
+
+	.PSECT	DECIO,I,RO
+
+............................................................
+;
+; WR$LIN - ЗАПИСЬ В ВЫХОДНОЙ ФАЙЛ
+; ПАРАМЕТРЫ:
+; CURLIN - СТРОКА ДЛЯ ВЫВОДА
+; В R2 - АДРЕС КОНЦА СТРОКИ
+;
+............................................................
+WR$LIN::
+	JSR	R1,$SAV2
+	MOV	#CURLIN,R1
+	SUB	R1,R2		;ВЫЧИСЛИТЬ ДЛИНУ
+
+	TST	TTYFLG		;ВЫВОД НА ТЕРМИНАЛ?
+	BEQ	2$		;НЕТ
+
+	MOV	R1,R0
+1$:	MOVB	(R1)+,@R0
+	CMPB	(R0)+,#200	; СИМВОЛ - ЗАПОЛНИТЕЛЬ?
+	BNE	4$		; НЕТ
+	DEC	R0		; ПРОПУСТЬ СИМВОЛЫ-ЗАПОЛНИТЕЛИ
+4$:	SOB	R2,1$
+	CLRB	@R0
+	.PRINT	#CURLIN
+	RETURN
+
+2$:	MOVB	(R1)+,R0
+	CMPB	R0,#200
+	BEQ	3$		; 200
+	CALL	PUTBYT
+3$:	SOB	R2,2$
+	MOVB	#15,R0
+	CALL	PUTBYT
+	MOVB	#12,R0
+	CALL	PUTBYT
+	RETURN
+
+; ВЫВОД 1 БАЙТА ИЗ R0
+PUTBYT:
+	MOVB	R0,@OUTPOS
+	INC	OUTPOS
+	CMP	OUTPOS,#OUTBUF+512.
+	BLO	1$
+	MOV	#OUTBUF,OUTPOS
+	.WRITW	#AREA,OUTCHAN,#OUTBUF,#256.,OUTBLK
+	BCS	3$
+	INC	OUTBLK
+1$:	CLC
+	RETURN
+3$:	TST	(SP)+
+	FATAL	E.OUT
+............................................................
+;
+; OP$MAC - УСТАНОВКА УКАЗАТЕЛЕЙ ВЫХОДНОГО ФАЙЛА .MAC
+;
+OP$MAC::
+;
+; OP$DIA - УСТАНОВКА .DIA - ФАЙЛА ДЛЯ ВЫВОДА
+;
+............................................................
+OP$DIA::
+	CLR	R1	; ВЫВОДИТЬ ПО НУЛЕВОМУ КАНАЛУ
+	.WAIT	R1
+	BCS	1$
+	CLR	OUTBLK
+	MOV	#OUTBUF,OUTPOS
+	MOV	R1,OUTCHAN
+1$:	RETURN
+............................................................
+;
+; IN$IMG - УСТАНОВКА ВХОДНОГО ЗАГРУЗОЧНОГО ФАЙЛА
+
+IN$IMG::
+	MOV	#3,R1	; КАНАЛ
+	BR	IN$FIL
+;
+; IN$DIA - УСТАНОВКА ФАЙЛА .DIA ДЛЯ ВВОДА (4 КАНАЛ)
+;
+............................................................
+IN$DIA::
+	MOV	#4,R1	; КАНАЛ
+
+IN$FIL:	.WAIT	R1
+	BCS	1$	; НЕ УКАЗАН
+	MOV	R1,INCHAN
+	MOV	#INBUF+512.,INPOS
+	MOV	#-1,MEMBLK	; ВХОДНОЙ БУФЕР (INBUF) СВОБОДЕН
+	CLR	INBLK
+1$:	RETURN
+............................................................
+;
+; CL$MAC - ДОВЫВОД И ЗАКРЫТИЕ ВЫХОДНОГО ФАЙЛА
+;
+CL$MAC::
+;
+; CL$DIA - ДОВЫВОД И ЗАКРЫТИЕ .DIA - ФАЙЛА
+;
+............................................................
+CL$DIA::
+	MOV	OUTPOS,R1
+	SUB	#OUTBUF,R1
+	BEQ	1$
+	MOV	OUTBLK,R1
+2$:	CLR	R0
+	CALL	PUTBYT
+	CMP	R1,OUTBLK
+	BEQ	2$
+	BR	1$
+1$:	.CLOSE	OUTCHAN
+	RETURN
+............................................................
+;
+; PR$IMG - ЗАКРЫТИЕ ВХОДНОГО ЗАГР. ФАЙЛА
+;
+............................................................
+PR$IMG::
+	MOV	#3,R1
+	BR	CLS
+............................................................
+;
+; PR$DIA - ЗАКРЫТИЕ ВХОДНОГО .DIA - ФАЙЛА
+;
+............................................................
+PR$DIA::
+	MOV	#4,R1
+CLS:	.PURGE	R1
+	MOV	#-1,MEMBLK	; ВХОДНОЙ БУФЕР (INBUF) СВОБОДЕН
+	RETURN
+............................................................
+;
+; СЧИТАТЬ БЛОК ИЗ ФАЙЛА.
+;
+............................................................
+RD$BLK::
+	MOV	R0,MEMBLK
+	.READW	#AREA,#3,#INBUF,#256.,MEMBLK
+	BCC	1$
+	FATAL	E.INP
+1$:	RETURN
+............................................................
+;
+; RL$LIN - СЧИТАТЬ СТРОКУ В CURLIN , ЗАКОНЧИТЬ 0
+;
+............................................................
+RD$LIN::
+	MOV	R1,-(SP)
+	MOV	#CURLIN,R1
+1$:	CALL	GETBYT
+	BCS	9$		; КОНЕЦ ФАЙЛА
+	BITB	#177,R0		; ПУСТОЙ СИМВОЛ
+	BEQ	1$
+	CMPB	R0,#12
+	BEQ	2$
+	MOVB	R0,(R1)+
+	BR	1$
+2$:	DEC	R1
+9$:	CLRB	@R1		; ЗАКОНЧИТЬ СТРОКУ
+	MOV	(SP)+,R1
+	RETURN
+............................................................
+;
+; RD$PRM - СЧИТАТЬ СТРОКУ С ТЕРМИНАЛА В CMDLIN С ПОДСКАЗКОЙ
+; ВХОД:
+;	R0 - АДРЕС ПОДСКАЗКИ
+;
+............................................................
+RD$PRM::
+	MOV	R1,-(SP)
+	.PRINT			; ВЫВЕСТИ ТЕКСТ ПОДСКАЗКИ
+	MOV	#CMDLIN,R1
+1$:	.TTYIN
+	CMPB	R0,#15		; CR?
+	BEQ	4$
+	MOVB	R0,(R1)+
+	CMPB	R0,#'Z-100	; CTRL/Z?
+	BNE	2$		; ДА
+	.TTYOUT	#12
+	BR	3$
+2$:	CMPB	R0,#12		; LF?
+	BNE	1$		; ПРОДОЛЖИТЬ ВВОД
+3$:	.TTYOUT	#15		; ВЫВЕСТИ CR
+	BR	5$		; КОНЕЦ СТРОКИ ПО LF
+4$:	.TTYIN			; ПРОПУСТИТЬ 'LF'
+5$:	CLRB	(R1)+		; ЗАКОНЧИТЬ СТРОКУ '0'
+	MOV	(SP)+,R1
+	RETURN
+
+GETBYT:
+	CMP	INPOS,#INBUF+512.
+	BLO	1$
+	.READW	#AREA,INCHAN,#INBUF,#256.,INBLK
+	BCS	2$
+	INC	INBLK
+	MOV	#INBUF,INPOS
+1$:	MOVB	@INPOS,R0
+	INC	INPOS
+	CLC
+3$:	RETURN
+2$:	MOVB	@#ERRBYT,R0
+	BEQ	3$
+	FATAL	E.INP
+............................................................
+;
+; WR$TTY - ВЫВЕСТИ СТРОКУ НА ТЕРМИНАЛ
+;
+............................................................
+WR$TTY::
+	.PRINT
+	RETURN
+............................................................
+;
+; TS$TTY - ОПРОСИТЬ , НЕ БЫЛО ЛИ ПРЕРЫВАНИЯ С ТЕРМИНАЛА
+; 'C' SET - НЕ БЫЛО
+............................................................
+TS$TTY::
+	BIS	#TTSPC$!TCBIT$,@#JSW
+	.TTINR
+	BCS	2$	
+1$:	.TTINR		; ОЧИСТИТЬ БУФЕР ТЕРМИНАЛА
+	BCC	1$
+	CLC
+2$:	BIC	#TTSPC$!TCBIT$,@#JSW
+	RETURN
+............................................................
+;
+; ПРЕКРАЩЕНИЕ I/O, ЗАКРЫТЬ ВСЕ ФАЙЛЫ
+;
+............................................................
+IO$RST::
+	.SRESET
+	RETURN
+............................................................
+;
+; ЗАПРЕТИТЬ ПРЕРЫВАНИЕ ПРОГРАММЫ ПО CTRL/C
+;
+............................................................
+SETAST::
+	.SCCA	#AREA,#TERM	; ЗАПРЕТИТЬ ПРЕРЫВАНИЕ ПО CTRL/C
+	TST	TSXFLG
+	BEQ	1$
+	MOV	#SETLST,R1
+2$:	MOV	#SETEMT,R0
+	MOVB	(R1)+,2(R0)
+	EMT	375
+	TSTB	@R0
+	BNE	2$
+1$:	RETURN
+
+.IF	DF,D$SAV
+......................................................................
+;
+; LDASAV - ПРЕОБРАЗОВАНИЕ МОДУЛЯ .LDA В ЗАГРУЗОЧНЫЙ .SAV
+;
+......................................................................
+LDASAV::
+	.DSTAT	#AREA,#WFNAM
+	BCS	4$
+	MOV	WFNAM,WRKFIL
+4$:	.ENTER	#AREA,#14.,#WRKFIL,#128.
+	BCC	1$
+	FATAL	E.OWRK
+1$:	MOV	#OUTBUF,R0
+	MOV	#256.,R1
+2$:	CLR	(R0)+
+	SOB	R1,2$		; ОБНУЛЕНИЕ OUTBUF
+
+	MOV	#128.,R1
+	CLR	R2
+3$:	.WRITW	#AREA,#14.,#OUTBUF,#256.,R2
+	INC	R2		; ОБНУЛЕНИЕ ВЫХ. ФАЙЛА
+	SOB	R1,3$
+
+	MOV	#-1,L.LDA
+	CLR	H.LDA
+	CLR	R5		; СЧЕТЧИК БЛОКОВ ВХОДНОГО ФАЙЛА
+READ:	CLR	CHKSUM		; КОНТРОЛЬНАЯ СУММА
+	CALL	LDABYT
+	DECB	R0		; 1
+	BNE	READ
+	CALL	LDABYT
+	TSTB	R0		; 0
+	BNE	READ
+	CALL	LDAWRD		; СЧИТАТЬ СЧЕТЧИК БАЙТОВ
+	MOV	R0,R3
+	CALL	LDAWRD		; АДРЕС ЗАГРУЗКИ
+	MOV	R0,R2
+	SUB	#6,R3
+	BEQ	ENDLDA		; СТАРТОВЫЙ АДРЕС, КОНЕЦ МОДУЛЯ
+
+4$:	CMP	R2,H.LDA
+	BLOS	1$
+	MOV	R2,H.LDA
+1$:	CMP	R2,L.LDA
+	BHIS	2$
+	MOV	R2,L.LDA
+2$:	MOV	R2,R1
+	SWAB	R1
+	ASR	R1
+	BIC	#^C127.,R1
+	CMP	R1,R5		; ЭТОТ БЛОК В ПАМЯТИ?
+	BEQ	3$		; ДА
+	.WRITW	#AREA,#14.,#OUTBUF,#256.,R5	; ВЫТОЛКНУТЬ ТЕК. БЛОК
+	MOV	R1,R5
+	.READW	#AREA,#14.,#OUTBUF,#256.,R5	; СЧИТАТЬ НУЖНЫЙ БЛОК
+3$:	MOV	R2,R1
+	BIC	#^C777,R1
+	CALL	LDABYT		; СЧИТАТЬ БАЙТ .LDA - МОДУЛЯ
+	MOVB	R0,OUTBUF(R1)
+	INC	R2
+	SOB	R3,4$
+	CALL	LDABYT		; ПРОПУСТИТЬ КОНТР. СУММУ !!!!
+	TSTB	CHKSUM
+	BEQ	READ
+	ERROR	E.SUMM
+	BR	READ
+ENDLDA:
+	.WRITW	#AREA,#14.,#OUTBUF,#256.,R5
+	MOV	R2,S.LDA
+	MOV	#14.,SAVCHN
+	RETURN
+LDABYT:
+	CALL	GETBYT
+	BCC	1$
+	FATAL	E.BLDA
+1$:	ADD	R0,CHKSUM
+	RETURN
+LDAWRD:
+	CALL	LDABYT
+	MOV	R0,-(SP)
+	CALL	LDABYT
+	MOVB	R0,1(SP)
+	MOV	(SP)+,R0
+	RETURN
+.ENDC
+............................................................
+;
+; БЛОЧНЫЕ БУФЕРА И УКАЗАТЕЛИ ДЛЯ ВВОДА/ВЫВОДА
+;
+............................................................
+	.PSECT	DECDAT,D
+TSXFLG::.BLKW	1
+SETEMT:	.BYTE	0,152
+	.BLKW	2
+SETLST::.ASCIZ	/IYRUSM/
+	.EVEN
+.IF	DF,D$SAV
+WFNAM:	.RAD50	/WF/
+WRKFIL:	.RAD50	/DK WORK  SAV/
+CHKSUM:	.BLKW	1	; КОНТРОЛЬНАЯ СУММА
+.ENDC
+TERM:	.BLKW	1
+SAVCHN:	.BLKW	1
+OUTCHAN:.BLKW	1	; НОМЕР ВЫХОДНОГО КАНАЛА
+OUTPOS: .BLKW	1	; ТЕК. ПОЗ. В ВЫХОДНОМ ФАЙЛЕ
+OUTBLK: .BLKW	1	; ТЕК. БЛОК В ВЫХОДНОМ ФАЙЛЕ
+INCHAN:	.BLKW	1
+INPOS:	.BLKW	1
+INBLK:	.BLKW	1
+AREA:	.BLKW	10
+INBUF:: .BLKW	256.	; БЛОЧНЫЙ БУФФЕР ВХОДНОГО ФАЙЛА
+OUTBUF:	.BLKW	256.	; БЛОЧНЫЙ БУФФЕР ВЫХОДНОГО ФАЙЛА
+	.EVEN
+	.END

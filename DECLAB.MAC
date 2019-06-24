@@ -1,0 +1,518 @@
+.INCLUDE /DECDFN/
+.MODULE DECLAB,RELEASE=V05,VERSION=06,COMMENT=<ВСТАВКА МЕТОК В ТЕКСТ>
+............................................................
+;
+; DECLAB - ПРОСТАНОВКА МЕТОК, РАСШИРЕНИЕ .BLKW
+;	ВХОДНАЯ СТРОКА - В CURLIN
+;
+............................................................
+	.PSECT	LABDAT,D,RW
+DATFLG:	.BLKW	1
+
+	.PSECT	DECLAB,I,RO
+INSLAB::
+	JSR	R1,$SAV5	; СОХРАНИТЬ РЕГИСТРЫ 1-5
+
+	MOV	R2,LINEND	; КОНЕЦ СТРОКИ
+	MOV	MACLC,R5
+	MOV	R5,LABLC
+	MOV	R5,I.LEN
+	SUB	CURLC,I.LEN
+	MOV	CURSGN,STREAM	; ДЛЯ ВЫВОДА МЕТОК
+	MOV	CURSEG,LABSEG
+
+OUTLAB:	MOV	#CURLIN+8.,R0	; СОХРАНИТЬ ЧАСТЬ СТРОКИ
+	CLR	DATFLG
+	CMPB	@R0,#'.
+	BNE	1$
+	INC	DATFLG
+1$:	MOV	(R0)+,-(SP)
+	MOV	(R0)+,-(SP)
+	MOV	(R0)+,-(SP)
+............................................................
+;
+; ВЫВОД ГЛОБАЛЬНЫХ МЕТОК
+;
+............................................................
+GLBPUT:
+1$:	MOV	R5,R3		; LABLC
+	MOV	#GLBPN1,R0	; АДРЕС ТАБЛИЦЫ
+	CALL	LABSRH		; ИСКАТЬ
+	BCS	2$		; НЕ НАШЛИ
+	CALL	CBLKB		; ПРОВЕРИТЬ НА .BLKB
+	CALL	PUTNAM		; ВЫВЕСТИ ИМЯ
+	MOVB	#':,(R2)+	;
+	MOVB	#':,(R2)+
+	TST	DATFLG		; ВЫВОДИТЬ ИМЯ ОТДЕЛЬНО?
+	BNE	1$		; НЕТ
+	CALL	CLNPUT
+	BR	1$
+2$:	TST	BLKB1
+	BNE	TXTPUT		; НЕ ВЫВОДИТЬ .+NNN
+
+3$:	MOV	CURLC,R3
+	DEC	R3
+	MOV	#GLBPN1,R0	; АДРЕС ТАБЛИЦЫ
+	CALL	LABSRH		; ИСКАТЬ
+	BCS	TXTPUT		; НЕ НАШЛИ
+	CALL	PUTNAM		; ВЫВЕСТИ ИМЯ
+	MOVB	#'=,(R2)+
+	CALL	PUTEQU		;
+	BR	3$		; МОГУТ БЫТЬ СОВП. ГЛОБ. СИМВОЛЫ
+............................................................
+;
+; ВЫВОД ТЕКСТОВЫХ МЕТОК
+;
+............................................................
+TXTPUT:
+1$:	MOV	R5,R3		; LABLC
+	MOV	#TXTPN1,R0	; АДРЕС ТАБЛИЦЫ
+	CALL	LABSRH		; ИСКАТЬ
+	BCS	2$		; НЕ НАШЛИ
+	CALL	CBLKB		; ПРОВЕРИТЬ НА .BLKB
+	CALL	PUTNAM		; ВЫВЕСТИ ИМЯ
+	MOVB	#':,(R2)+
+	TST	DATFLG		; ВЫВОДИТЬ ИМЯ ОТДЕЛЬНО?
+	BNE	1$		; НЕТ
+	CALL	CLNPUT
+	BR	1$
+2$:	TST	BLKB1
+	BNE	LSPUT		; НЕ ВЫВОДИТЬ .+NNN
+
+3$:	MOV	CURLC,R3
+	DEC	R3
+	MOV	#TXTPN1,R0	; АДРЕС ТАБЛИЦЫ
+	CALL	LABSRH		; ИСКАТЬ
+	BCS	LSPUT		; НЕ НАШЛИ
+	CALL	PUTNAM		; ВЫВЕСТИ ИМЯ
+	CALL	PUTEQU		;
+	BR	3$		; МОГУТ БЫТЬ СОВП. ГЛОБ. СИМВОЛЫ
+............................................................
+;
+; ВЫВОД ЛОКАЛЬНЫХ СИМВОЛОВ  (  ?XXXXX:)
+;
+............................................................
+LSPUT:
+	MOV	R5,R3
+	MOV	#LSPN1,R0	; АДРЕС ТАБЛИЦЫ
+	CALL	LABSRH		; ИСКАТЬ
+	BCS	2$		; НЕ НАШЛИ
+;	CALL	CK.TYP		; ПРОВЕРИТЬ ТИП (DATA)
+	CALL	CBLKB
+	CALL	CLNPUT		; ДОВЫВЕСТИ ПРЕД. МЕТКУ
+	MOV	R3,R0
+	MOV	#CURLIN,R2
+	CALL	OUTLS		; ЗАСЛАТЬ В БУФЕР МЕТКУ
+	MOVB	#':,(R2)+
+	TSTB	1(R1)
+	BEQ	2$
+	MOVB	#':,(R2)+
+	TST	DATFLG		; ВЫВОДИТЬ ИМЯ ОТДЕЛЬНО?
+	BNE	2$		; НЕТ
+	CALL	CLNPUT
+2$:	TST	BLKB1
+	BNE	LLPUT
+
+3$:	MOV	CURLC,R3
+	DEC	R3
+	MOV	#LSPN1,R0	; АДРЕС ТАБЛИЦЫ
+	CALL	LABSRH		; ИСКАТЬ
+	BCS	LLPUT		; НЕ НАШЛИ
+;	CALL	CK.TYP		; ПРОВЕРИТЬ ТИП (DATA)
+	CALL	CLNPUT		; ДОВЫВЕСТИ ПРЕД. МЕТКУ
+	MOV	R3,R0
+	MOV	#CURLIN,R2
+	CALL	OUTLS		; ВЫВЕСТИ МЕТКУ
+	TSTB	1(R1)
+	BEQ	4$
+	MOVB	#'=,(R2)+
+4$:	CALL	PUTEQU		; ВЫВЕСТИ X=.+N
+	BR	3$
+............................................................
+;
+; ВЫВОД ЛОКАЛЬНЫХ МЕТОК (LL, XXX$:)
+;
+............................................................
+LLPUT:
+	MOV	R5,R3		; LABLC
+	MOV	#LLPN1,R0	; АДРЕС ТАБЛИЦЫ
+	CALL	LABSRH		; ИСКАТЬ
+	BCS	2$		; НЕ НАШЛИ - КОНЕЦ
+	CALL	CBLKB
+	CALL	CLNPUT
+	MOV	R3,R0
+	MOV	#CURLIN,R2
+	CALL	OUTLL
+	MOVB	#':,(R2)+
+2$:	TST	BLKB1
+	BNE	RESTOR
+;
+; ВНИМАНИЕ ! ВЫРАЖЕНИЕ XXX$=.+N НЕДОПУСТИМО ДЛЯ АССЕМБЛЕРА
+;    НЕОБХОДИМЫ ИСПРАВЛЕНИЯ В ПОЛУЧЕННОМ .MAC - ФАЙЛЕ
+;
+3$:	MOV	CURLC,R3
+	DEC	R3
+	MOV	#LLPN1,R0	; АДРЕС ТАБЛИЦЫ
+	CALL	LABSRH		; ИСКАТЬ
+	BCS	RESTOR
+	CALL	CLNPUT
+	MOV	R3,R0
+	MOV	#CURLIN,R2
+	CALL	OUTLL		; ВЫВЕСТИ L.L.
+	CALL	PUTEQU
+	BR	3$
+............................................................
+
+RESTOR:
+	MOV	#CURLIN+14.,R0
+	MOV	(SP)+,-(R0)
+	MOV	(SP)+,-(R0)
+	MOV	(SP)+,-(R0)
+
+	MOV	BLKB1,BLKB
+	BEQ	COMMENT 	; .BLKB НЕ ОБНАРУЖЕНО
+	MOV	CURLC,R0
+	SUB	LABLC,R0
+	CALL	SETBLK
+	MOV	CURLC,R1
+
+	MOV	GLBPN1,R0
+	BEQ	1$
+	MOV	2(R0),R1
+1$:	MOV	TXTPN1,R0
+	BEQ	11$
+	CMP	2(R0),R1
+	BHIS	11$
+	MOV	2(R0),R1
+11$:	MOV	LSPN1,R0
+	BEQ	2$
+	CMP	2(R0),R1
+	BHIS	2$
+	MOV	2(R0),R1
+2$:	MOV	LLPN1,R0
+	BEQ	3$
+	CMP	2(R0),R1
+	BHIS	3$
+	MOV	2(R0),R1
+3$:	CMP	R1,CURLC
+	BLO	4$
+	BR	COMMENT
+4$:	MOV	R1,R5		; УСТАНОВИТЬ LABLC
+	JMP	OUTLAB		; ПРОДОЛЖИТЬ ОБРАБОТКУ
+............................................................
+
+COMMENT:
+	CALL	OUTCOM
+OUTPUT:
+	CLR	BLKB1
+	CLR	BLKB
+	MOV	LINEND,R2
+	CALL	OUT$LIN		; ВЫВЕСТИ В ВЫХОДНОЙ ФАЙЛ
+	RETURN
+............................................................
+;
+; ПОДПРОГРАММЫ ДЛЯ ТРЕТЬЕГО ПРОХОДА
+;
+; CBLKB - ВЫВОД .BLKB ДО МЕТКИ
+;	R5 - ТЕКУЩЕЕ LC
+;
+............................................................
+CBLKB:
+	TST	BLKB		; ОБРАБАТЫВАТЬ .BLKB
+	BEQ	99$		; НЕТ - ВОЗВРАТ
+	JSR	R1,$SAV4	; СОХРАНИТЬ РЕГИСТРЫ
+	MOV	R5,R0
+	SUB	LABLC,R0	; ВЫЧИСЛИТЬ КОЛ-ВО БАЙТОВ ПЕРЕД МЕТКОЙ
+	CALL	SETBLK
+	MOV	R5,-(SP)
+	CALL	OUTCOM
+	MOV	(SP)+,R5
+	MOV	LINEND,R2
+	CALL	OUT$LIN		; ВЫВЕСТИ СТРОКУ
+
+	CALL	BEGLIN		; СТЕРЕТЬ МЕТКУ
+	MOV	R5,LABLC	; ПРОДВИНУТЬ LABLC
+	CLR	BLKB		; СБРОСИТЬ ФЛАГ ОБРАБОТКИ
+99$:	RETURN
+............................................................
+;
+; SETBLK - УСТАНОВКА ДЛИНЫ .BLKW
+;
+............................................................
+SETBLK:
+	MOV	#CURLIN+12.,R2
+	MOV	#<100000+'B>,(R2)+	; 'B,200
+	BIT	#1,LABLC
+	BNE	1$
+	BIT	#1,R0
+	BNE	1$
+	ASR	R0
+	MOV	#<100000+'W>,-2(R2)
+1$:	MOV	#<11*400+200>,(R2)+	; 200,11
+	CALL	OCONV
+	CALL	MOVTXT		; ВЫВЕСТИ В СТРОКУ MACRO
+	MOV	R2,LINEND	; УСТАНОВИТЬ КОНЕЦ СТРОКИ
+	RETURN
+............................................................
+;
+; ВЫВОД КОМЕНТАРИЯ
+;
+............................................................
+OUTCOM:
+	MOV	CURLC,I.LEN
+	SUB	LABLC,I.LEN
+	TST	COMSWT
+	BEQ	7$
+
+	MOV	LINEND,R2
+	MOV	R2,R4
+	MOV	#LC.COL,R0
+	CALL	ROUND
+	MOVB	#';,(R2)+
+	BIT	#C.CMT,COMSWT
+	BEQ	1$
+	TST	CURCMT
+	BEQ	1$
+	CALL	COMCMT
+	BR	6$
+1$:	BIT	#C.LC,COMSWT
+	BEQ	2$
+	CALL	COMLC
+2$:	TST	BLKB1
+	BNE	6$
+	CMP	CURLIN+8.,#".=
+	BEQ	6$
+	CMP	CURLIN+8.,#".A
+	BEQ	6$
+	CMP	I.LEN,#6
+	BHI	6$
+3$:	BIT	#C.WRD,COMSWT
+	BEQ	4$
+	CALL	COMWRD
+4$:	BIT	#C.ASC,COMSWT
+	BEQ	5$
+	CALL	COMASC
+5$:	BIT	#C.RAD,COMSWT
+	BEQ	6$
+	CALL	COMRAD
+6$:	MOV	R4,LINEND
+7$:	RETURN 
+
+............................................................
+;
+; ЗАПОЛНЕНИЕ ТАБУЛЯЦИЕЙ ИЛИ ПРОБЕЛАМИ ДО СЛЕД. ПОЗ. КОМЕНТАРИЯ
+;  R0 - СЛЕД. ПОЗ.
+............................................................
+
+ROUND::
+	MOV	R1,-(SP)
+	MOV	R3,-(SP)
+	MOV	R2,R1
+	SUB	#CURLIN,R1	; ТЕКУЩАЯ ПОЗИЦИЯ
+
+1$:	MOV	R0,R3		; СЛЕД. ПОЗИЦИЯ
+	SUB	R1,R3		; ОСТАЛОСЬ ПОЗИЦИЙ
+	BLE	3$		; НИЧЕГО НЕ ОСТАЛОСЬ
+5$:	MOV	R1,-(SP)
+	BIC	#^C7,@SP
+	SUB	#10,@SP
+	NEG	@SP
+	CMP	R3,(SP)+	; МЕНЬШЕ,ЧЕМ НА ТАБ.
+	BLT	3$
+2$:	MOVB	#200,(R2)+	; СИМВОЛ-ЗАПОЛНИТЕЛЬ - 200
+	INC	R1
+	BIT	#7,R1
+	BNE	2$
+	MOVB	#11,-1(R2)
+	MOV	R0,R3		; СЛЕД. ПОЗИЦИЯ
+	SUB	R1,R3		; ОСТАЛОСЬ ПОЗИЦИЙ
+	BLE	4$		; НИЧЕГО НЕ ОСТАЛОСЬ, ВОЗВРАТ
+	BR	5$
+
+3$:	MOVB	#40,(R2)+
+	INC	R1
+	CMP	R1,R0
+	BLT	3$
+4$:	MOV	(SP)+,R3
+	MOV	(SP)+,R1
+	RETURN
+
+............................................................
+COMLC:
+	MOV	LABLC,R0
+	CALL	FOCONV
+	CALL	MOVTXT
+	MOV	R2,R4
+	RETURN
+............................................................
+COMCMT:
+	MOV	CURCMT,R0
+	BEQ	1$
+	ADD	#C$PARM,R0
+	CALL	MOVTXT
+	MOV	R2,R4
+1$:	RETURN
+............................................................
+COMWRD:
+	MOV	I.LEN,R1
+	ASR	R1
+	BNE	3$
+	MOVB	#' ,(R2)+
+	MOVB	LINBYT,R0
+	BIC	#^C377,R0	;+++
+	CALL	FOCONV
+	ADD	#3,R0		; УБРАТЬ ПЕРВЫЕ 3 СИМВОЛА
+	CALL	MOVTXT
+	MOV	R2,R4
+	RETURN
+
+3$:	MOV	#LINBYT,L.B.PNT
+6$:	MOVB	#' ,(R2)+
+	MOV	@L.B.PNT,R0
+	CALL	FOCONV
+	CALL	MOVTXT
+	ADD	#2,L.B.PNT
+	DEC	R1
+	BNE	6$
+	MOV	R2,R4
+	RETURN
+............................................................
+
+COMASC:
+	MOV	#ASC.COL,R0
+	CALL	ROUND
+	MOV	I.LEN,R1
+	CLR	R3
+	MOVB	#'",(R2)+
+	MOV	#LINBYT,R5
+
+4$:	MOVB	(R5)+,R0
+	CMPB	R0,#40
+	BLT	1$
+	CMPB	R0,#176
+	BGT	1$
+	MOVB	R0,(R2)+
+	INC	R3
+1$:	DEC	R1
+	BNE	4$
+
+5$:	MOVB	#'",(R2)+
+	TST	R3
+	BNE	3$
+	MOV	R4,R2
+3$:	MOV	R2,R4
+	RETURN
+............................................................
+
+COMRAD:
+	MOV	#RAD.COL,R0
+	CALL	ROUND
+	MOV	R2,R0
+	MOV	I.LEN,R1
+	ASR	R1
+	BEQ	10$
+	CLR	R2
+	MOVB	#'/,(R0)+
+	MOV	#LINBYT,R5
+2$:	MOV	(R5)+,R3
+	BEQ	1$
+	CMP	R3,#175000	; ДОП. ЗНАЧ. R50?
+	BHIS	1$		; НЕТ
+	CALL	R50AS1		; ПРЕОБР. В ASCII
+	INC	R2		; УВЕЛ. СЧЕТЧИК ПРЕОБР. СЛОВ
+1$:	DEC	R1
+	BNE	2$
+	MOVB	#'/,(R0)+
+	TST	R2		; ЧТО-НИБУТЬ ПРЕОБР.?
+	BNE	3$		; ДА
+10$:	MOV	R4,R0
+3$:	MOV	R0,R2
+	MOV	R2,R4
+	RETURN
+............................................................
+;
+; ВЫВОД ИМЕНИ ГЛОБАЛЬНОГО СИМВОЛА
+;
+............................................................
+PUTNAM:
+	CALL	CLNPUT		; ДОВЫВЕСТИ ПРЕД.
+	MOV	#CURLIN,R0
+	CALL	R50ASC
+	MOV	R0,R2
+	CALLR	DELSP
+............................................................
+;
+; П/П ПОИСКА МЕТОК И СИМВОЛОВ (ОБЩАЯ)
+;
+; НА ВХОДЕ: R0 - АДРЕС ТАБЛИЦЫ
+;	    R3 - LC ДЛЯ ПОИСКА
+;
+; НА ВЫХОДЕ: SEC - НЕ НАЙДЕНА
+;	     CLC - НАЙДЕНА
+;
+; R1 - ИСПОЛЬЗУЕТСЯ (ИМЯ ДЛЯ .GLOBL)
+;
+............................................................
+LABSRH:
+	MOV	@R0,R1		; ВОЗЬМЕМ ЭЛЕМЕНТ
+	BEQ	1$		; НИЧЕГО НЕТ
+	CMP	2(R1),R3	; СОВП. LC?
+	BHI	1$		; НЕТ
+	MOV	@R1,@R0		; ДА,ОБНОВИТЬ УКАЗАТЕЛЬ
+	CMP	2(R1),MACLC	; МЕНЬШЕ АДРЕСА ТЕК. СТРОКИ?
+	BLO	LABSRH		; ДА, ПРОПУСТИТЬ
+	TST	(R1)+		; LINK
+	MOV	(R1)+,R3	; УСТАНОВИТЬ НА ИМЯ (ДЛЯ .GLOBL),R3 - АДР. МЕТКИ
+	CCC
+	RETURN
+1$:	SEC			; ОШИБКА - НЕ НАШЛИ
+	RETURN
+.REM	\
+............................................................
+;
+;	CK.TYP - ПРОВЕРКА ТИПА МЕТКИ
+;
+............................................................
+CK.TYP:
+	TST	DATFLG		; ДАННЫЕ?
+	BEQ	1$		; НЕТ, ВОЗВРАТ
+	CMPB	@R1,#LT.DAT	; МЕТКА ВЫШЕ ПО ПРИОРИТЕТУ?
+	BGE	2$		; ДА, ВОЗВРАТ
+	MOVB	#LT.DAT,@R1	; УСТАНОВИТЬ ТИП МЕТКИ "ДАННЫЕ"
+	RETURN
+1$:	CMPB	@R1,#LT.DAT
+	BNE	2$
+	MOVB	#LT.LAB,@R1
+2$:	RETURN
+\
+............................................................
+;
+; П/П ВЫВОДА МЕТКИ
+; ВЫВОДИТ МЕТКУ , ЕСЛИ ОНА ЗАПИСАНА, И СТИРАЕТ ЕЕ
+;
+............................................................
+CLNPUT:
+	TSTB	CURLIN			; ЕСТЬ МЕТКА
+	BMI	RET			; НЕТ - ВОЗВРАТ
+	CALL	OUT$LIN
+	CALL	BEGLIN			; СТЕРЕТЬ МЕТКУ
+RET:	RETURN
+............................................................
+;
+; ВЫВЕСТИ =.+N
+;
+............................................................
+PUTEQU: MOVB	#'=,(R2)+
+	MOVB	#'.,(R2)+
+	MOVB	#'+,(R2)+
+	MOV	R3,R0		; LABEL LC
+	SUB	R5,R0		; LABLC
+	BPL	1$
+	NEG	R0
+	MOVB	#'-,-1(R2)
+1$:	CALL	OCONV
+	CALL	MOVTXT
+	CALL	OUT$LIN
+	CALLR	BEGLIN
+
+	.END

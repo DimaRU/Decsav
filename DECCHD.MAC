@@ -1,0 +1,194 @@
+.INCLUDE /DECDFN/
+.MODULE DECCHD,RELEASE=V05,VERSION=00,COMMENT=<ДИСПЕТЧЕР ДЕКОДЕРА>
+
+.REM	\
+
+	DECSAV/DECTSK - ДЕКОДЕР ЗАГРУЗОЧНЫХ МОДУЛЕЙ .SAV / .LDA / .TSK
+
+РАЗРАБОТАН: БОРОВИКОВ Д.М. , МГТУ ИМ. БАУМАНА, МИПК
+
+PASS 1 СБОР ГЛОБАЛЬНЫХ МЕТОК
+PASS 2 СБОР ВСЕХ МЕТОК
+PASS 3 ПРОСТАНОВКА МЕТОК, ДИАЛОГ
+\
+
+.AUDIT	.DECCHD	.DECODE	.DECPRM	.DECCSI	.DECCMD	.DECDAT	.DECINS	.DECTRN	
+.AUDIT	.DECCON	.DECIO	.DECTBL	.DECLAB	.DECSET	.DECCTX	.DECSHO	.DECCRF
+
+............................................................
+;
+; DECCHD : ВЕРХНИЙ УРОВЕНЬ
+;
+............................................................
+DECCHD::
+.IIF	DF,D$DBG	CALL	DBGSET
+	CALL	INIT		; ИНИЦИАЛИЗАЦИЯ
+	MOV	SP,DECSP	; СОХРАНИТЬ СТЕК
+	CALL	DECCSI		; ОБРАБОТКА КОМАНДНОЙ СТРОКИ
+
+	CALL	IN$IMG		; ОТКРЫТЬ ВХОДНОЙ ФАЙЛ ЗАГР. МОДУЛЯ
+	BCC	1$
+	FATAL	E.NFIL
+
+1$:	CALL	INIMEM		; ИНИЦИАЛИЗАЦИЯ ПАМЯТИ И ДР.
+
+	TST	SGDSWT		; ВВОДИТЬ ОПРЕДЕЛЕНИЯ СЕГМЕНТОВ С ТЕРМИНАЛА?
+	BEQ	2$		; НЕТ
+	CALL	DEFSEG
+	BR	3$
+
+2$:	CALL	DECPRM		; ВЗЯТЬ ПАРАМЕТРЫ ДЕКОДИРОВАНИЯ ИЗ ЗАГОЛОВКА
+
+3$:	CALL	IN$DIA		; ОТКРЫТЬ ФАЙЛ С КОМАНДАМИ И МЕТКАМИ (ВВОД)
+	BCC	4$
+	ERROR	E.NDIA		; СООБЩИМ, ЧТО ФАЙЛ ДИАЛОГА НЕ ОТКРЫТ
+	BR	5$
+4$:	MOV	SP,CTXFLG	; ОБОЗНАЧИТЬ ДЛЯ LINTRN УПРОЩЕННЫЙ РАЗБОР
+	CALL	GETCTX		; ВВЕСТИ КОМАНДЫ
+	CLR	CTXFLG
+	CALL	PR$DIA		; ЗАКРЫТЬ
+
+5$:	TST	TTYFLG
+	BNE	6$
+	CALL	OP$MAC		; УСТАНОВИТЬ ВЫХОДНОЙ ФАЙЛ (ВЫВОД)
+	BCC	6$
+	MOV	SP,TTYFLG	; ПО УМОЛЧАНИЮ - ВЫВОД НА ТЕРМИНАЛ
+
+6$:	CALL	STASET		; ЗАНЕСТИ СТАНДАРТНЫЕ МЕТКИ (START,JSW,...)
+	CALL	DECINF		; ВЫВЕСТИ СПРАВОЧНУЮ ИНФОРМАЦИЮ
+
+DO:
+	TST	BRKFLG		; ДИАЛОГ?
+	BNE	DO2		; ДА
+	MOV	#-1,D.PASS	; ОБОЗНАЧИТЬ ПЕРВЫЙ ПРОХОД
+	MOV	#-1,CURSGN
+
+1$:	MOV	CURSGN,R0
+	INC	R0
+	CALL	SETSEG
+	CMP	CURSGN,OVRNUM	; НЕ ДЕКОДИРОВАТЬ ВЫВОДИМЫЙ СЕГМЕНТ
+	BEQ	2$
+	CALL	INITPAS
+	CALL	DECODE		; PASS 1 - СБОР ГЛОБАЛЬНЫХ МЕТОК
+2$:	CMP	CURSGN,OVRCNT
+	BLT	1$
+
+	MOV	OVRNUM,R0
+	CALL	SETSEG		; ДЕКОДИРОВАТЬ ВЫБРАННЫЙ СЕГМЕНТ
+	CALL	INITPAS
+	CALL	DECODE		; PASS 1 - СБОР ГЛОБАЛЬНЫХ МЕТОК
+
+	CLR	D.PASS		; ОБОЗНАЧИТЬ ВТОРОЙ ПРОХОД
+	CALL	INITPAS
+	CALL	DECODE		; PASS 2 - СБОР ВСЕХ МЕТОК
+	BR	DO3		; ПЕРЕЙТИ К ТРЕТЬЕМУ ПРОХОДУ
+DO2:
+	CLR	D.PASS		; ОБОЗНАЧИТЬ ВТОРОЙ ПРОХОД
+	BIT	#L.MEM,PARSWT	; ЭКОНОМИТЬ ПАМЯТЬ ПРИ ДИАЛОГЕ?
+	BEQ	1$		; НЕТ
+
+	MOV	OVRNUM,R0	; УСТАНОВИТЬ ТРЕБУЕМЫЙ НОМЕР СЕГМЕНТА
+	CALL	SETSEG
+	CALL	INITPAS
+	CALL	DECODE		; PASS 2 - СБОР ВСЕХ МЕТОК
+	BR	3$
+
+1$:	MOV	#-1,CURSGN
+2$:	MOV	CURSGN,R0
+	INC	R0
+	CALL	SETSEG
+	CALL	INITPAS
+	CALL	DECODE		; PASS 2 - СБОР ВСЕХ МЕТОК
+	CMP	CURSGN,OVRCNT
+	BLT	2$
+	CLR	R0
+	CALL	SETSEG		; УСТАНОВИТЬ ROOT
+
+3$:	CALL	SETAST		; УСТАНОВИТЬ AST ПО ВВОДУ С ТЕРМИНАЛА
+
+DO3:
+	BIT	#L.LOC,PARSWT
+	BEQ	1$
+	CALL	SETLSB		; ОПРЕДЕЛЕНИЕ LSB
+1$:	BIT	#L.NUM,PARSWT
+	BEQ	2$
+	CALL	SETLSN		; ОПРЕДЕЛЕНИЕ НУМЕРАЦИИ LS
+
+2$:	MOV	#1,D.PASS	; ОБОЗНАЧИТЬ ТРЕТИЙ ПРОХОД
+	CALL	INITPAS
+	CALL	SHOEXT		; ВЫВЕСТИ МЕТКИ,КОТ. НЕ ВЫВЕДУТСЯ В ТЕКСТЕ
+
+	MOV	#ENLSB,R0
+	MOV	#CURLIN,R2
+	CALL	MOVTXT
+	CALL	OUT$LIN
+
+	MOV	SEGLST,R0
+3$:	MOV	O$LOW(R0),O$MACL(R0)
+	MOV	@R0,R0		; СЛЕД. СЕГМЕНТ
+	BNE	3$		; ДО КОНЦА СПИСКА
+
+	CALL	DECODE		; PASS 3 - ПРОСТАНОВКА МЕТОК
+
+	MOV	#CURLIN,R2
+	MOV	#DSLSB,R0
+	CALL	MOVTXT
+	CALL	OUT$LIN
+
+ENDDEC:
+	CALL	ENDPRT		; ВЫВЕСТИ .END [START]
+	BIT	#L.CRF,PARSWT	; ВЫВОДИТЬ ТАБЛИЦУ ПЕРЕКРЕСТНЫХ ССЫЛОK?
+	BEQ	1$		; НЕТ
+	CALL	DECCRF		; ВЫВЕСТИ ТАБЛИЦУ ПЕРЕКРЕСТНЫХ ССЫЛОK
+
+1$:	TST	BRKFLG		; ДИАЛОГ?
+	BNE	2$		; ДА, ВЫВЕСТИ КОМАНДЫ И МЕТКИ
+	TST	TTYFLG
+	BNE	3$
+	CALL	CL$MAC		; ЗАКРЫТЬ ВЫХ. ФАЙЛ
+	BR	3$
+
+2$:	CLR	TTYFLG
+	CALL	OP$DIA		; ОТКРЫТЬ ФАЙЛ ДЛЯ ВЫВОДА КОМАНД
+	BCS	3$		; НЕ УКАЗАН
+	CALL	OUTCTX		; ВЫВЕСТИ КОМАНДЫ И МЕТКИ
+	CALL	CL$DIA		; ЗАКРЫТЬ
+
+3$:	CALL	PR$IMG		; ЗАКРЫТЬ ВХ. ФАЙЛ
+
+; ВЫВОД ИНФОРМ. О ПАМЯТИ
+
+	MOV	#CURLIN,R2
+	MOV	#MSGC1,R0
+	CALL	MOVTXT
+	MOV	HICORE,R0
+	SUB	LOCORE,R0
+	MOV	R0,R1
+	CALL	DCONV
+	CALL	MOVTXT
+	MOVB	#'/,(R2)+
+	ADD	CURMEL,R1
+	SUB	CURMEH,R1
+	MOV	R1,R0
+	CALL	DCONV
+	CALL	MOVTXT
+	MOV	#CURLIN,R0
+	CALL	WR$TTY
+
+	JMP	DECCHD
+
+DECRST::			; ТОЧКА РЕСТАРТА DECCHD
+	MOV	DECSP,SP	; ВОССТАНОВИТЬ СТЕК
+	CALL	IO$RST		; ЗАКРЫТЬ ФАЙЛЫ И ДР.
+	JMP	DECCHD		; ПЕРЕЗАПУСТИТЬ ДЕКОДЕР
+............................................................
+;
+; РАЗМЕСТИТЬ СЕКЦИЮ ДАННЫХ ПЕРЕД ТЕКСТОМ СООБЩ.
+;
+............................................................
+	.PSECT	DECDAT,D
+	.PSECT	DECTXT,D,RO
+MSGC1:	.ASCIZ	"ПАМЯТЬ (ОТВЕДЕНО/ИСПОЛЬЗОВАНО) : "
+	.EVEN
+
+	.END	DECCHD

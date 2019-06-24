@@ -1,0 +1,118 @@
+.INCLUDE /DECDFN/
+.MODULE DECSET,RELEASE=V05,VERSION=09,COMMENT=<ИНИЦИАЛИЗАЦИЯ ДАННЫХ>
+;
+; DECSET - П/П УСТАНОВКИ УКАЗАТЕЛЕЙ И ДАННЫХ DECSAV
+;
+	.PSECT	DECSET,I,RO
+
+............................................................
+;
+; НАЧАЛЬНАЯ ИНИЦИАЛИЗАЦИЯ ДАННЫХ ДЛЯ DECSAV
+;
+............................................................
+INIT::
+	BIC	#BAS$,I.RET	; ВЫКЛЮЧИТЬ RETURN,CALL
+	BIC	#BAS$,I.CALL
+	MOV	#TABLLO,R0	; ИНИЦ. УКАЗАТЕЛИ
+1$:	CLR	(R0)+
+	CMP	R0,#TABLHI
+	BLO	1$
+.IF	DF,$CODE
+	COM	R0
+	MOV	.$FLACD,R0
+	COM	R0
+	ADD	#$CONST,R0
+	MOV	R0,.$FLADR
+2$:	ADD	#1000+$CONST,.$DMS1
+	ADD	#1010+$CONST,.$DMS2
+	ADD	#1100+$CONST,.$DMS3
+	ADD	#111000+$CONST,.$DMS4
+	MOV	#<BR+<<3$-2$-1>/2>>,2$
+.$DMS1==.+2
+3$:	CALL	$DECMS-<1000+$CONST>
+	.PSECT	DECDAT,D
+.$FLACD:.WORD	^C<$MFLAG-$CONST>
+	.PSECT
+.ENDC
+	MOV	#100,OVROFS
+	RETURN
+............................................................
+;
+;  ИНИЦИАЛИЗАЦИЯ ПАМЯТИ ДЛЯ НАЧАЛА ДЕКОДИРОВАНИЯ
+;
+............................................................
+INIMEM::
+	MOV	PARSWT,PARSAV
+	BIT	#L.CAL,PARSWT	; ДЕКОДИРОВАТЬ RETURN,CALL?
+	BEQ	1$		; НЕТ
+	BIS	#BAS$,I.RET	; ВКЛЮЧИТЬ RETURN,CALL
+	BIS	#BAS$,I.CALL
+1$:	MOV	#4,L.LLBK
+	MOV	#6,L.LSBK
+	MOV	#10,L.TXBK
+	MOV	#10,L.GLBK
+	BIT	#L.LOC,PARSWT
+	BEQ	2$
+	MOV	#10,L.LLBK
+2$:	BIT	#L.CRF,PARSWT
+	BEQ	3$
+	MOV	#10,L.LSBK
+	MOV	#12,L.TXBK
+	MOV	#12,L.GLBK
+3$:	MOV	#MAX.I*2,R2	; ОТВЕДЕНИЕ ПАМЯТИ ПОД SV.INS
+	CALL	GTMEML		; ВЗЯТЬ ПАМЯТЬ
+	MOV	#SV.INS,R0
+	MOV	R2,(R0)+	; BEG
+	MOV	R2,(R0)+	; CUR
+	ADD	#<MAX.I*2>-2,R2
+	MOV	R2,(R0)+	; END
+	CLR	(R0)+		; CNT
+	MOV	#MAX.I,(R0)+	; LEN
+	MOV	#MCRLEN,R2
+	CALL	GTMEML		; ОТВЕДЕНИЕ ПАМЯТИ ПОД MACRO
+	MOV	R2,MCRBUF
+	MOV	R2,MCREND
+	MOV	CURMEL,MCBEND
+	RETURN
+............................................................
+;
+; ИНИЦИАЛИЗАЦИЯ ДАННЫХ ПЕРЕД СЛЕД. ПРОХОДОМ
+;
+............................................................
+INITPAS::
+	CALL	INICTX
+	MOV	L.ADDR,MACLC
+	MOV	L.ADDR,CURLC
+	MOV	SV.INS+B.BEG,SV.INS+B.CUR	; POS
+	CLR	SV.INS+B.CNT
+	RETURN
+............................................................
+;
+; ИНИЦИАЛИЗАЦИЯ КОНТЕКСТА ДЕКОДИРОВАНИЯ
+;
+............................................................
+INICTX::
+	MOV	#'/,DELIM	; ПО УМОЛЧАНИЮ - '/'
+	MOV	#12,ENDCHR	; ПО УМОЛЧАНИЮ - LF
+	MOV	#33,STACHR	; ПО УМОЛЧАНИЮ - ESC
+	MOV	#60.,CHRLIM	; МАХ. КОЛ-ВО СИМВОЛОВ В СТРОКЕ ASCII
+	MOV	PARSAV,PARSWT
+	CLR	R.BASE
+	CLR	R.SUBR
+	CLR	NOINTF
+	CLR	NOLABF
+	MOV	CURSGN,R.STRM
+
+; СОХРАНИТЬ УКАЗАТЕЛИ
+
+	MOV	M.C.SV,MODCMD
+	MOV	S.C.SV,SETCMD
+	MOV	#DC.INS,CURCMD
+	MOV	LLPNT,LLPN1
+	MOV	LSPNT,LSPN1
+	MOV	GLBPNT,GLBPN1
+	MOV	TXTPNT,TXTPN1
+	MOV	#1,CURBRK
+	RETURN
+
+	.END

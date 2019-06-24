@@ -1,0 +1,763 @@
+.INCLUDE /DECDFN/
+.MODULE DECPRM,RELEASE=V05,VERSION=04,COMMENT=<ВВОД МЕТКИ ЗАДАЧИ .TSK>
+
+;
+; П/П ВВОДА ПАРАМЕТРОВ ДЛЯ ДЕКОДИРОВАНИЯ ИЗ МЕТКИ ЗАДАЧИ
+;
+
+.IIF	NE,RSX11$	.LIBRARY /LB:[1,1]EXEMC/
+.IIF	NE,RT11$	.INCLUDE /EXEMC.MAC/
+
+	.MCALL	LBLDF$	HDRDF$
+
+	LBLDF$
+	HDRDF$
+
+.MACRO	MOVLIN	LINE
+	MOV	LINE,R0
+	MOV	#CURLIN,R2
+	CALL	MOVTXT
+.ENDM	MOVLIN
+
+.MACRO	NULLIN
+	MOV	#CURLIN,R2
+	MOVB	#200,(R2)+
+	CALL	WR$LIN
+.ENDM	NULLIN
+
+DECPRM::
+	CLR	R0
+	CLR	SEGBAS
+	CLR	SEGBLK
+	CALL	RD$ABS		; СЧИТАТЬ ЗАГОЛОВОК ФАЙЛА
+	MOV	R0,R4		; АДРЕС СЧИТАННОГО БУФЕРА
+
+; ПРОВЕРКА НА I/D SPACE, RO SHARED, RSX11M+
+
+	CMPB	L$BSYS(R4),#4
+	BEQ	NOTSUP		; ПОКА НЕ ПОДДЕРЖИВАЕМ
+	TST	L$BROL(R4)	; R/O LOAD SIZE
+	BNE	NOTSUP
+	TST	L$BDLZ(R4)	; LOAD SIZE OF DATA SEGM.
+	BEQ	ISSUP
+NOTSUP:	FATAL	E.NSUP
+
+............................................................
+;
+;	ФОРМАТ СПИСКА СЕГМЕНТОВ ЗАДАЧИ
+;
+............................................................
+.REM	/
+
+SEGLST: - ЗАГОЛОВОК
+
+O$LINK	LINK
+O$SBLK	SEGBLK
+O$SBAS	SEGBAS
+O$LOW	LOW ADDR
+O$HIGH	HI ADDR
+O$LLAB	L.LAB
+O$HLAB	H.LAB
+O$NAME 	NAME OF SEGM (2 СЛОВА)
+O$SLEV	ГЛУБИНА ВЛОЖЕННОСТИ ОВЕРЛЕЙНОГО СЕГМЕНТА(1 БАЙТ)
+O$SFLG	ФЛАГ СЕГМЕНТА(1 БАЙТ)
+O$MCMD	СОХР. M.C.CMD
+O$SCMD	СОХР. S.C.CMD
+O$LL	СОХР. LSPNT
+O$LS	СОХР. LLPNT
+O$TXT	СОХР. TXTPNT
+O$GLB	СОХР. GLBPNT
+O$NLS	НАЧАЛЬНЫЕ НОМЕРА МЕТОК ДЛЯ LS
+O$LEN	РАЗМЕР БЛОКА СЕГМЕНТА
+
+/
+
+; СОСТАВЛЕНИЕ СПИСКА СЕГМЕНТОВ ЗАДАЧИ
+
+ISSUP:
+	CLR	OVRCNT
+	CLR	SEGLEV
+	MOV	L$BXFR(R4),S.ADDR	; СТАРТОВЫЙ АДРЕС ЗАДАЧИ
+	MOV	L$BSEG(R4),BSEG		; СОХР. L$BSEG
+	MOV	L$BFLG(R4),BFLG
+	CLR	INISP
+	MOV	#O$LEN,R2
+	CALL	GTMEML		; ВЫДЕЛИТЬ ПАМЯТЬ
+	MOV	R2,R5
+	MOV	R2,SEGLST
+	MOV	#O$LEN/2,R0
+20$:	CLR	(R2)+		; ОЧИСТИТЬ БЛОК СЕГМЕНТА
+	SOB	R0,20$
+
+	MOV	L$BLDZ(R4),R0	; ДЛИНА ЗАГР. ЧАСТИ
+	ASH	#6,R0		; В БАЙТЫ
+	BIC	#77,R0
+	MOV	L$BSA(R4),R1
+	MOV	L$BHRB(R4),O$SBLK(R5); НОМЕР БЛОКА ЗАГОЛОВКА ЗАДАЧИ - SEGBLK
+	MOV	R1,O$SBAS(R5)	; SEGBAS FOR ROOT
+	MOV	R1,O$LOW(R5)	; LOW
+	MOV	R1,O$HIGH(R5)	; HIGH
+	ADD	R0,O$HIGH(R5)	; ВЫЧИСЛИМ ВЕРХНИЙ АДРЕС ROOT
+	MOV	O$HIGH(R5),O$HLAB(R5)
+
+	MOV	L$BTSK(R4),O$NAME(R5)
+	BEQ	1$
+	MOV	L$BTSK+2(R4),O$NAME+2(R5)
+	BR	2$
+1$:	MOV	#<^RROO>,O$NAME(R5)
+	MOV	#<^RT  >,O$NAME+2(R5)
+2$:	CLR	O$SFLG(R5)		; ФЛАГ, ГЛУБИНА ВЛОЖ.
+
+	BIT	#TS$NHD,L$BFLG(R4)	; ЗАГОЛОВОК ЕСТЬ?
+	BNE	99$			; НЕТ
+
+	MOV	O$SBLK(R5),SEGBLK	; УСТАНОВИМ БАЗУ ЗАГОЛОВКА ЗАДАЧИ
+	MOV	O$SBAS(R5),SEGBAS
+
+	CLR	R0
+	CALL	RD$ABS		; СЧИТАТЬ ЗАГОЛОВОК ЗАДАЧИ
+
+	MOV	H.ISP(R4),INISP	; НАЧАЛЬНОЕ ЗНАЧЕНИЕ СТЕКА ( LOW )
+	MOV	H.OVLY(R4),NOVPT
+	BEQ	99$		; НЕТ ОВЕРЛЕЕВ
+
+	MOV	H.OVLY(R4),R0
+	ADD	#2,R0		; АДРЕС .NSTBL
+	CALL	RD$REL		; СЧИТАТЬ СЛОВО
+	MOV	@R0,R4		; АДРЕС	@.NSTBL
+4$:	MOV	R4,R0
+	CALL	RD$REL		; СЧИТАТЬ СЛОВО ИЗ ОПИСАТЕЛЯ ОВЕРЛ. СЕГМЕНТА
+	TST	@R0
+	BEQ	99$		; ОВЕРЛЕИ ТОЛЬКО ИЗ БИБЛИОТЕК
+	BIT	#40000,@R0	; НЕ ИМЕЕТ ОТВЕДЕННОГО ДИСКОВОГО ПРОСТР - БИБЛИОТЕКА.
+	BEQ	3$		; НАШЛИ ПЕРВЫЙ ОПИСАТЕЛЬ
+	ADD	BSEG,R4
+	BR	4$		; ПРОДОЛЖИМ ПОИСК
+
+3$:	MOV	R4,-(SP)
+	CALL	RDSEGM		; СЧИТАТЬ ТАБЛИЦУ СЕГМЕНТОВ
+	TST	(SP)+
+
+99$:	MOV	SEGLST,R5
+	BIT	#TS$NHD,BFLG
+	BNE	21$
+	MOV	INISP,O$LOW(R5)	; LOW ADDR ROOT
+	BR	22$
+21$:	BIT	#TS$RES,BFLG
+	BNE	RESOVR
+22$:	MOV	O$LOW(R5),O$LLAB(R5)
+	BR	RET0
+
+RESOVR:
+	MOV	L$BSA(R4),R3		; БАЗОВЫЙ АДРЕС ЗАДАЧИ
+	MOV	L$BHRB(R4),R1		; БЛОК
+	MOV	L$BSGL(R4),SEGBLK	; НОМЕР БЛОКА СПИСКА ЗАГР. СЕГМЕНТОВ
+	CLR	R0
+	CALL	RD$ABS
+	MOV	R0,R4			; АДРЕС БУФЕРА
+1$:	MOV	(R4)+,R0
+
+	MOV	R1,O$SBLK(R5)
+	MOV	R3,O$SBAS(R5)		;??? - БАЗОВЫЙ АДРЕС
+	MOV	R3,O$LLAB(R5)		;??? - НИЖНЯЯ ОБЛ. МЕТОК
+	MOV	R3,O$LOW(R5)		;??? НИЖНИЙ АДРЕС ДЕКОД.
+	MOV	R3,O$HIGH(R5)		; ВЕРХНИЙ
+	ADD	R0,O$HIGH(R5)
+	MOV	O$HIGH(R5),O$HLAB(R5)
+
+	ADD	#777,R0
+	BIC	#777,R0
+	SWAB	R0
+	ASR	R0
+	ADD	R0,R1			; СЛЕД. БЛОК
+	TST	@R4
+	BEQ	RET0
+
+	MOV	#O$LEN,R2
+	CALL	GTMEML		; ВЫДЕЛИТЬ ПАМЯТЬ
+	MOV	R2,@R5
+	MOV	R2,R5
+	MOV	#O$LEN/2,R0
+2$:	CLR	(R2)+		; ОЧИСТИТЬ БЛОК СЕГМЕНТА
+	SOB	R0,2$
+
+	BR	1$
+
+RET0:	RETURN
+
+STASET::
+	CMP	OVRNUM,OVRCNT
+	BLOS	1$			; СЛИШКОМ БОЛЬШОЙ НОМЕР СЕГМЕНТА
+	FATAL	E.SEGM
+
+1$:	MOV	SEGLST,R5
+	MOV	O$LLAB(R5),ROOTL
+	MOV	O$HLAB(R5),ROOTH
+
+	CLR	R0
+	CALL	SETSEG
+	MOV	#<^RSTA>,R50NAM	; ЗАНЕСТИ ИМЯ START
+	MOV	#<^RRT >,R50NAM+2
+	MOV	S.ADDR,R0
+	BEQ	2$
+	BIT	#1,R0
+	BNE	2$		; СТАРТОВЫЙ АДРЕС НЕ УКАЗАН
+	CALL	PLTXT		; СОЗДАТЬ ИМЯ
+2$:	MOV	#VCTDFT,R3
+3$:	MOV	(R3)+,R50NAM
+	BEQ	4$
+	MOV	(R3)+,R50NAM+2
+	MOV	(R3)+,R0
+	CALL	PLTXT		;+++GBL
+	BR	3$
+4$:	MOV	NOVPT,R4
+	BEQ	6$
+	MOV	#LABTBL,R3	; СОЗДАТЬ ИМЕНА ОВЕРЛЕЙНОЙ ОБЛАСТИ
+5$:	MOV	(R3)+,R50NAM
+	MOV	(R3)+,R50NAM+2
+	MOV	R4,R0
+	ADD	(R3)+,R4
+	CALL	PLTXT
+	TST	@R3
+	BNE	5$
+6$:	RETURN
+............................................................
+;
+; ВЫВОД ИНФОРМАЦИИ О ДЕКОДИРУЕМОЙ ЗАДАЧЕ
+;
+............................................................
+DECINF::
+
+; ВЫВОД ОБЯЗАТЕЛЬНЫХ ИНФОРМАЦИОННЫХ СООБЩЕНИЙ
+
+	MOV	OVRNUM,R0	; УСТАНОВИТЬ НОМЕР ДЕКОДИРУЕМОГО СЕГМЕНТА
+	CALL	SETSEG
+
+	MOV	#CURLIN,R2	; ВЫВЕСТИ СТРОКУ ИДЕНТИФ.
+	MOV	#IDENT,R0
+	MOVB	#';,(R2)+
+	CALL	MOVTXT
+	CALL	WR$LIN
+
+	MOV	#CURLIN,R2	; ВЫВЕСТИ КОМАНДНУЮ СТРОКУ
+	MOV	#CSISTR,R0
+	MOVB	#';,(R2)+
+	CALL	MOVTXT
+	CALL	WR$LIN
+
+	MOV	#CURLIN,R2	; ВЫВЕСТИ .TITLE
+	MOV	#TITLE,R0
+	CALL	MOVTXT
+	MOV	R2,R0
+	MOV	#SEGNAM,R1
+	TST	@R1
+	BEQ	1$		; НЕТ ИМЕНИ
+	CALL	R50ASC
+	MOV	R0,R2
+	CALL	DELSP
+	CALL	WR$LIN
+
+1$:	MOV	#MS.VER,R0	; ВЕРСИЯ ФАЙЛА ДИАЛОГА
+	MOV	#CURLIN,R2
+	CALL	MOVTXT
+	MOV	DIAVER,R0
+	CALL	OCONV
+	CALL	MOVTXT
+	CALL	WR$LIN
+
+	MOV	#MS.STA,R0	; СТАРТОВЫЙ АДРЕС
+	MOV	#CURLIN,R2
+	CALL	MOVTXT
+	MOV	S.ADDR,R0
+	CALL	OCONV
+	CALL	MOVTXT
+	CALL	WR$LIN
+
+	NULLIN
+
+	BIT	#L.LST,PARSWT	; ВЫВОДИТЬ .ASECT
+	BNE	INFLST
+	JMP	RET
+
+INFLST::
+	MOV	CURSGN,-(SP)
+	MOV	OVRNUM,CURSGN
+	CALL	SHOSEG		; ВЫВЕСТИ СПИСОК СЕГМЕНТОВ
+	MOV	(SP)+,CURSGN
+
+	NULLIN
+
+	MOV	#ASECT,R0
+	MOV	#CURLIN,R2
+	CALL	MOVTXT
+	CALL	WR$LIN
+
+	MOV	#CURLIN,R2
+	MOV	#".=,(R2)+
+	MOV	L.ADDR,R0
+	CALL	OCONV
+	CALL	MOVTXT
+	CALL	WR$LIN
+
+RSX::
+	CLR	R0
+	CLR	SEGBLK
+	CALL	RD$ABS		; СЧИТАТЬ МЕТКУ ЗАДАЧИ
+	MOV	R0,R5
+	TST	L$BTSK(R5)
+	BEQ	1$		; НЕТ ИМЕНИ
+	MOVLIN	#TTSK
+	MOV	R5,R1
+	ADD	#L$BTSK,R1
+	MOV	R2,R0
+	CALL	R50ASC
+	MOV	R0,R2
+	CALL	DELSP
+	CALL	WR$LIN
+
+1$:	TST	L$BPAR(R5)
+	BEQ	3$		; НЕТ ИМЕНИ
+	MOVLIN	#TPAR
+	MOV	R5,R1
+	ADD	#L$BPAR,R1
+	MOV	R2,R0
+	CALL	R50ASC
+	MOV	R0,R2
+	CALL	DELSP
+	MOV	L$BSA(R5),R0	; БАЗОВЫЙ АДРЕС РАЗДЕЛА
+	BEQ	2$
+	MOVB	#':,(R2)+
+	CALL	OCONV
+	CALL	MOVTXT
+2$:	CALL	WR$LIN
+
+3$:	MOVLIN	#TPRI
+	MOV	L$BPRI(R5),R0
+	BEQ	4$
+	CALL	DCONV
+	CALL	MOVTXT
+	CALL	WR$LIN
+
+4$:	MOVLIN	#TEXT
+	MOV	L$BEXT(R5),R0
+	BEQ	5$
+	ASH	#5.,R0
+	CALL	OCONV
+	CALL	MOVTXT
+	CALL	WR$LIN
+
+5$:	MOVLIN	#TBOFF
+	MOV	L$BOFF(R5),R0
+	BEQ	6$
+	CALL	OCONV
+	CALL	MOVTXT
+	CALL	WR$LIN
+
+6$:	MOVLIN	#TFLG			; ФЛАГИ ЗАДАЧИ
+	MOV	L$BFLG(R5),R0
+	CALL	OCONV
+	CALL	MOVTXT
+	MOVB	#'=,(R2)+
+	MOV	#FLGTBL,R4
+7$:	MOV	(R4)+,R0		; АДРЕС
+	BEQ	8$			; КОНЕЦ ТАБЛИЦЫ
+	BIT	(R4)+,L$BFLG(R5)	; ФЛАГ УСТАНОВЛЕН?
+	BEQ	7$			; НЕТ
+	CALL	MOVTXT
+	MOVB	#'!,(R2)+
+	BR	7$
+8$:	TSTB	-(R2)
+	CALL	WR$LIN
+
+	MOV	#L$BDAT,R4
+	ADD	R5,R4
+	CALL	DATE
+
+	TST	L$BLIB(R5)
+	BEQ	LSTLUN
+	ADD	#L$BLIB,R5
+
+	MOVLIN	#TLIBR
+	CALL	WR$LIN
+
+9$:	NULLIN
+
+	MOVLIN	#TLBNAM		; ИМЯ БИБЛИОТЕКИ
+	MOV	R2,R0
+	MOV	R5,R1
+	CALL	R50ASC
+	MOV	R0,R2
+	CALL	DELSP
+	MOVB	#':,(R2)+
+	MOVB	#'R,(R2)+
+	MOVB	#'W,(R2)+
+	BIT	#LD$ACC,R$LFLG(R5)	; БИТ ДОСТУПА К БИБЛИОТЕКЕ
+	BNE	10$			; RW
+	MOVB	#'O,-1(R2)		; RO
+10$:	CALL	WR$LIN
+
+	MOVLIN	#TLFLG			; ФЛАГИ ЗАДАЧИ
+	MOV	R$LFLG(R5),R0
+	CALL	OCONV
+	CALL	MOVTXT
+	MOVB	#'=,(R2)+
+	MOV	#LFLGTB,R4
+11$:	MOV	(R4)+,R0		; АДРЕС
+	BEQ	12$			; КОНЕЦ ТАБЛИЦЫ
+	BIT	(R4)+,R$LFLG(R5)	; ФЛАГ УСТАНОВЛЕН?
+	BEQ	11$			; НЕТ
+	CALL	MOVTXT
+	MOVB	#'!,(R2)+
+	BR	11$
+12$:	TSTB	-(R2)
+	CALL	WR$LIN
+
+	MOV	#TLBLIM,R0
+	MOV	R$LSA(R5),R1
+	MOV	R$LMXV(R5),R3
+	CALL	OUTMSG
+	TST	R$LSEG(R5)
+	BEQ	13$
+
+	MOVLIN	#TRLSEG
+	MOV	R$LSEG(R5),R0
+	CALL	OCONV
+	CALL	MOVTXT
+	CALL	WR$LIN
+
+13$:	MOV	R5,R4
+	ADD	#R$LDAT,R4
+	CALL	DATE
+	ADD	#14.*2,R5
+	TST	@R5
+	BNE	9$
+LSTLUN:
+	NULLIN
+	MOVLIN	#TUNIT
+	MOV	#INBUF,R5
+	MOV	L$BLUN(R5),R0	; ЧИСЛО УСТРОЙСТВ
+	MOV	R0,R4
+	CALL	DCONV
+	CALL	MOVTXT
+	CALL	WR$LIN
+
+	MOV	#1000,R0
+	CALL	RD$ABS		; СЧИТАТЬ БЛОК С НАЗНАЧЕНИЯМИ LUN
+
+	CLR	R1
+
+2$:	MOV	#8.,R3	
+	MOVLIN	#TASG
+3$:	INC	R1
+	TST	@R5
+	BNE	5$
+	CMP	(R5)+,(R5)+
+	INC	R3
+	BR	6$
+5$:	MOVB	(R5)+,(R2)+
+	MOVB	(R5)+,(R2)+
+	MOV	(R5)+,R0
+	BEQ	1$
+	CALL	OCONV
+	CALL	MOVTXT
+1$:	MOVB	#':,(R2)+
+	MOV	R1,R0
+	CALL	DCONV
+	CALL	MOVTXT
+	MOVB	#',,(R2)+
+6$:	CMP	R1,R4
+	BGE	4$
+	SOB	R3,3$
+4$:	TSTB	-(R2)
+	CALL	WR$LIN
+	CMP	R1,R4
+	BLT	2$
+
+; РАСПЕЧАТКА ИНФОРМАЦИИ ИЗ ЗАГОЛОВКА ЗАДАЧИ
+
+LSTVER:
+	BIT	#TS$NHD,BFLG
+	BNE	RET		; НЕТ ЗАГОЛОВКА - НЕ РАСПЕЧАТЫВАТЬ ИНФО.
+	MOV	SEGLST,R4
+	MOV	2(R4),SEGBLK
+	CLR	R0
+	CALL	RD$ABS		; СЧИТАТЬ ЗАГОЛОВОК
+	MOV	R0,R5
+
+	TST	H.SMAP(R5)
+	BEQ	3$
+	MOVLIN	#TIDENT
+	MOV	R2,R0
+	MOV	R5,R1
+	ADD	#H.SMAP,R1
+	CALL	R50ASC
+	MOV	R0,R2
+	CALL	DELSP
+	MOVB	#'/,(R2)+
+	CALL	WR$LIN
+
+3$:	MOV	#HDTBL,R1
+
+1$:	MOV	(R1)+,R0	; MSG ADDR
+	BEQ	RET
+	MOV	(R1)+,R4	; OFFSET
+	ADD	R5,R4
+	TST	@R4		; 0 - НЕ РАСПЕЧАТЫВАТЬ
+	BEQ	1$
+	MOV	#CURLIN,R2
+	MOV	#"; ,(R2)+
+	CALL	MOVTXT
+	MOVB	#'=,(R2)+
+	MOV	@R4,R0
+	CALL	OCONV
+	CALL	MOVTXT
+	CALL	WR$LIN
+	BR	1$
+
+RET:	MOV	CURSEG,R5	; УСТАНОВИТЬ БАЗУ И БЛОК ТЕКУЩЕГО СЕГМЕНТА
+	MOV	O$SBLK(R5),SEGBLK
+	MOV	O$SBAS(R5),SEGBAS
+	RETURN
+
+; П/П СЧИТЫВАНИЯ ОПИСАТЕЛЕЙ СЕГМЕНТОВ
+; R4 - АДРЕС ОЧЕРЕДНОГО ОПИСАТЕЛЯ
+; R5 - АДРЕС ПРЕД. ЭЛЕМЕНТА СПИСКА СЕГМЕНТОВ.
+; R3 - L$BHRB
+;
+RDSEG1::
+	MOV	R5,R0
+	MOV	#O$LEN,R2
+	CALL	GTMEML		; ВЫДЕЛИТЬ ПАМЯТЬ ПОД СЛЕД. ЭЛЕМЕНТ СПИСКА
+	MOV	R2,@R0		; ЗАПОЛНИТЬ LINK ПРЕД.
+	MOV	R2,R5
+	MOV	#O$LEN/2,R1
+20$:	CLR	(R2)+		; ОЧИСТИТЬ БЛОК СЕГМЕНТА
+	SOB	R1,20$
+	INC	OVRCNT		; ОБЩЕЕ КОЛ-ВО ОВЕРЛ. СЕГМЕНТОВ (ROOT - 0)
+RDSEGM::
+	MOV	R4,R0
+	CALL	RD$REL
+	MOV	@R0,R0
+	CLRB	O$SFLG(R5)
+	BIT	#40000,R0
+	BEQ	1$
+	INCB	O$SFLG(R5)	; NO DISK ALLOCATION - FLAG1
+
+1$:	BIC	#170000,R0	; ВЫДЕЛИТЬ НОМЕР БЛОКА
+	MOV	R0,O$SBLK(R5)	; SEGBLK
+	ADD	SEGBLK,O$SBLK(R5) ; + L$BHRB
+	MOV	R4,R0
+	ADD	#2,R0
+	CALL	RD$REL		; VIRT. LOAD ADDR
+	MOV	@R0,O$SBAS(R5)	; SEGBAS
+	MOV	@R0,O$LOW(R5)	; LOW ADDR
+	MOV	@R0,O$LLAB(R5)
+	MOV	@R0,O$HIGH(R5)	; HIGH ADDR
+	MOV	R4,R0
+	ADD	#4,R0
+	CALL	RD$REL
+	ADD	@R0,O$HIGH(R5)	; ADD LENGTH IN BYTES
+	MOV	O$HIGH(R5),O$HLAB(R5)
+	TST	@R0
+	BNE	2$
+	MOVB	#2,O$SFLG(R5)		; NULL SEGM
+2$:	MOVB	SEGLEV,O$SLEV(R5)	; ВЛОЖЕННОСТЬ СЕГМ.
+	CLR	O$NAME(R5)
+	CLR	O$NAME+2(R5)
+	CMP	BSEG,#20
+	BLT	3$		; НЕТ ИМЕНИ СЕГМЕНТА
+	MOV	R4,R0
+	ADD	#14,R0
+	CALL	RD$REL
+	MOV	@R0,O$NAME(R5)
+	MOV	R4,R0
+	ADD	#16,R0
+	CALL	RD$REL
+	MOV	@R0,O$NAME+2(R5)
+3$:	MOV	R4,R0
+	ADD	#6,R0
+	CALL	RD$REL
+	MOV	@R0,R0		; LINK UP
+	BEQ	4$		; НЕТ СЕГМЕНТА ВЫШЕ
+
+	MOV	R4,-(SP)
+	MOV	R0,-(SP)	; СОХР. АДРЕС NEXT
+	MOV	R0,R4		; АДРЕС СЛЕД. СЕГМЕНТА
+	INC	SEGLEV
+	CALL	RDSEG1		; ОБРАБОТАТЬ СЕГМЕНТ ВЫШЕ
+	DEC	SEGLEV
+	TST	(SP)+
+	MOV	(SP)+,R4	; ВОССТАНОВИТЬ АДРЕС, С КОТ. УШЛИ В UP
+
+4$:	MOV	R4,R0
+	ADD	#12,R0		; LINK NEXT
+	CALL	RD$REL
+	CMP	@R0,2(SP)	; ЗАЦИКЛИЛИСЬ С НАЧАЛОМ NEXT
+	BEQ	5$		; ЭТУ ВЕТКУ ЗАКОНЧИЛИ
+	MOV	@R0,R4		; NEXT
+	BR	RDSEG1		; ПРОДОЛЖИТЬ ОБРАБОТКУ
+5$:	RETURN
+
+DATE:
+	MOVLIN	#TCRDAT
+	MOV	4(R4),R0	; ДЕНЬ
+	CALL	DCONV
+	CALL	MOVTXT
+	MOVB	#'-,(R2)+
+	MOV	2(R4),R0	; МЕСЯЦ
+	DEC	R0
+	ASH	#2,R0
+	ADD	#MONS,R0
+	CALL	MOVTXT
+	MOVB	#'-,(R2)+
+	MOV	@R4,R0		; ГОД
+	ADD	#1900.,R0
+	CALL	DCONV
+	CALL	MOVTXT
+	CALLR	WR$LIN
+
+OUTMSG:
+	MOV	#CURLIN,R2
+	CALL	MOVTXT
+	MOV	R1,R0
+	CALL	OCONV
+	CALL	MOVTXT
+	MOVB	#':,(R2)+
+	MOV	R3,R0
+	CALL	OCONV
+	CALL	MOVTXT
+	CALLR	WR$LIN
+
+
+.MACRO	LABMAC	LABNAM	LEN
+	.RAD50	/LABNAM/
+	.WORD	LEN
+.ENDM	LABMAC
+
+	.PSECT	DECDAT,D
+NOVPT:	.BLKW	1
+BSEG:	.BLKW	1
+BFLG:	.BLKW	1
+INISP:	.BLKW	1
+SEGLEV:	.BLKW	1
+
+LABTBL:
+	LABMAC	<.NOVLY>	2
+	LABMAC	<.NSTBL>	2
+	LABMAC	<.NIOST>	4
+	LABMAC	<.NALER>	2
+	LABMAC	<.NSZSG>	1
+	LABMAC	<.NFAST>	1
+	LABMAC	<.NRDSG>	2
+	LABMAC	<.NMRKS>	2
+	LABMAC	<.NDTDS>	2
+	LABMAC	<.NAUTO>	2
+	.WORD	0
+VCTDFT:
+	LABMAC	<$DSW>		46
+	LABMAC	<.FSRPT>	50
+	LABMAC	<$OTSV>		52
+	LABMAC	<N.OVPT>	54
+	LABMAC	<$VEXT>		56
+	.WORD	0
+
+MONS:	.ASCIZ	/JAN/
+	.ASCIZ	/FEB/
+	.ASCIZ	/MAR/
+	.ASCIZ	/APR/
+	.ASCIZ	/MAY/
+	.ASCIZ	/JUN/
+	.ASCIZ	/JUL/
+	.ASCIZ	/AUG/
+	.ASCIZ	/SEP/
+	.ASCIZ	/OCT/
+	.ASCIZ	/NOV/
+	.ASCIZ	/DEC/
+
+	.PSECT	DECTXT,D,RO
+TTSK:	.ASCIZ	/; TASK=/
+TPAR:	.ASCIZ	/; PAR=/
+TPRI:	.ASCIZ	/; PRI=/
+TEXT:	.ASCIZ	/; EXTTSK=/
+TBOFF:	.ASCIZ	/; L$BOFF=/
+TFLG:	.ASCIZ	/; L$BFLG=/
+TLFLG:	.ASCIZ	/; R$LFLG=/
+TRLSEG:	.ASCIZ	/; R$LSEG=/
+TLIBR:	.ASCIZ	/; РЕЗИДЕНТНЫЕ БИБЛИОТЕКИ/
+TLBNAM:	.ASCIZ	/; ИМЯ: /
+TLBLIM:	.ASCIZ	/; НИЖНИЙ:ВЕРХНИЙ АДРЕС = /
+MS.STA::.ASCIZ	/; СТАРТОВЫЙ АДРЕС = /
+ASECT::	.ASCIZ	<11>/.ASECT/
+TUNIT:	.ASCIZ	/; UNITS=/
+TASG:	.ASCIZ	/; ASG=/
+TSGL:	.ASCIZ	/; СПИСОК СЕГМЕНТОВ/
+TCRDAT:	.ASCIZ	/; ДАТА СОЗДАНИЯ /
+TIDENT:	.ASCIZ	<11>/.IDENT/<11>"/"
+MS.VER:	.ASCIZ	/; ВЕРСИЯ ФАЙЛА : /
+TITLE:	.ASCIZ	<11>/.TITLE/<11>
+	.EVEN
+
+.MACRO	MSGOT	FLGNAM
+	.PSECT	DECTXT
+...ADR=.
+	.ASCIZ	/FLGNAM/
+
+	.PSECT	DECDAT
+	.WORD	...ADR,FLGNAM
+.ENDM	MSGOT
+
+	.PSECT	DECDAT
+FLGTBL:
+	MSGOT	TS$PIC
+	MSGOT	TS$NHD
+	MSGOT	TS$ACP
+	MSGOT	TS$PMD
+	MSGOT	TS$SLV
+	MSGOT	TS$NSD
+	MSGOT	TS$PRV
+	MSGOT	TS$CMP
+	MSGOT	TS$CHK
+	MSGOT	TS$RES
+	MSGOT	TS$IOP
+	MSGOT	TS$SUP
+	MSGOT	TS$XHR
+	MSGOT	TS$NXH
+	MSGOT	TS$NEW
+	.PSECT	DECDAT
+	.WORD	0
+LFLGTB:
+	MSGOT	LD$ACC
+	MSGOT	LD$RSV
+	MSGOT	LD$CLS
+	MSGOT	LD$SUP
+	MSGOT	LD$REL
+	MSGOT	LD$TYP
+	.PSECT	DECDAT
+	.WORD	0
+HDTBL:
+	MSGOT	H.IPS
+	MSGOT	H.ODVA
+	MSGOT	H.ODVL
+	MSGOT	H.TKVA
+	MSGOT	H.TKVL
+	MSGOT	H.PFVA
+	MSGOT	H.FPVA
+	MSGOT	H.RCVA
+	MSGOT	H.EFSV
+;	MSGOT	H.FPSA
+;	MSGOT	H.WND
+	MSGOT	H.FCS
+	MSGOT	H.FORT
+	MSGOT	H.OVLY
+	MSGOT	H.VEXT
+	MSGOT	H.RRVA
+	.PSECT	DECDAT
+	.WORD	0
+
+	.PSECT	DECIDN,D,RO
+IDENT::	.ASCII	/DECTSK V05.00/
+	.ASCIZ  " , COPYRIGHT (C) БОРОВИКОВ Д.М., МВТУ/МИПК"
+RSXPRM::.ASCII	<15><12>/DECT>/
+	.EVEN
+
+	.END

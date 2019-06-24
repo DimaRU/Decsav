@@ -1,0 +1,63 @@
+.INCLUDE /DECDFN/
+.MODULE DECERR,RELEASE=V05,VERSION=05,COMMENT=<СООБЩЕНИЯ ОБ ОШИБКАХ>
+
+	.PSECT	DECERR,I,RO
+$ERROR::
+	MOV	#PRFIXE,R0
+	CALL	WR$TTY		; ВЫВЕСТИ НА ТЕРМИНАЛ ПРЕФИКС
+	MOV	2(SP),R0
+	CALL	WR$TTY
+	MOV	@SP,2(SP)	; АДРЕС ВОЗВРАТА
+	TST	(SP)+
+	SEC
+	RETURN
+$FATAL::
+	MOV	#PRFIXF,R0
+	CALL	WR$TTY		; ВЫВЕСТИ НА ТЕРМИНАЛ ПРЕФИКС
+	MOV	2(SP),R0
+	CALL	WR$TTY
+	JMP	DECRST		; РЕСТАРТ DEC
+
+	.PSECT	ERRMSG,RO,D
+
+.IF	DF,D$SAV
+PRFIXE::.ASCII	/DECSAV-E-/<200>
+PRFIXF::.ASCII	/DECSAV-F-/<200>
+.IFF
+PRFIXE::.ASCII	/DECTSK-E-/<200>
+PRFIXF::.ASCII	/DECTSK-F-/<200>
+.ENDC
+E.NFIL::.ASCIZ	/ОШИБКА ОТКРЫТИЯ ФАЙЛА ЗАДАЧИ/
+E.NDIA::.ASCIZ	/ВХОДНОЙ ФАЙЛ ДИАЛОГА НЕ НАЙДЕН/
+E.SWT::	.ASCIZ	/ОШИБОЧНЫЙ КЛЮЧ/
+E.LAB::	.ASCIZ	/МЕТКА НЕ НАЙДЕНА В СПИСКЕ/
+E.ADDR::.ASCIZ	/НЕДОПУСТИМЫЙ АДРЕС/
+E.OUT::	.ASCIZ	/ОШИБКА ЗАПИСИ В ВЫХОДНОЙ ФАЙЛ/
+E.INP::	.ASCIZ	/ОШИБКА ЧТЕНИЯ ВХОДНОГО ФАЙЛА/
+E.MEM::	.ASCIZ	/ПАМЯТЬ ИСЧЕРПАНА/
+E.SNTX::.ASCIZ	/СИНТАКСИЧЕСКАЯ ОШИБКА В СТРОКЕ/
+E.GLB::	.ASCIZ	/ОШИБКА ПРИ ВВОДЕ СТРОКИ ОПРЕДЕЛЕНИЯ СИМВОЛА/
+E.NOCM::.ASCIZ	/КОМАНДА НЕ НАЙДЕНА/
+E.MCR::	.ASCIZ	"НЕТ MACRO/ПЕРЕПОЛНЕНИЕ БУФЕРА"
+E.SEGM::.ASCIZ	"ОШИБОЧНЫЙ НОМЕР СЕГМЕНТА / СЕГМЕНТ ПУСТОЙ"
+.IF	DF,D$TSK
+E.NSUP::.ASCIZ	"ДЕКОДИРОВАНИЕ ЗАДАЧИ С I/D SPACE НЕ ПОДДЕРЖИВАЕТСЯ"
+.ENDC
+.IF	NE,RT11$
+E.LOOK::.ASCIZ	/ОШИБКА ОТКРЫТИЯ ВХОДНОГО ФАЙЛА/
+E.ENTR::.ASCIZ	/ОШИБКА ОТКРЫТИЯ ВЫХОДНОГО ФАЙЛА/
+E.FTCH::.ASCIZ	/НЕДОПУСТИМОЕ УСТРОЙСТВО/
+ .IF	DF,D$SAV
+E.BLDA::.ASCIZ	/НЕДОПУСТИМЫЙ ФОРМАТ .LDA - МОДУЛЯ/
+E.OWRK::.ASCIZ	/ОШИБКА ОТКРЫТИЯ РАБОЧЕГО ФАЙЛА WORK.SAV/
+E.SUMM::.ASCIZ	/ОШИБКА КОНТРОЛЬНОЙ СУММЫ/
+ .ENDC
+.ENDC
+.IF	NE,RSX11$
+E.CMI::	.ASCIZ	/ОШИБКА ВВОДА КОМАНДНОЙ СТРОКИ/
+E.CSI::	.ASCIZ	/СИНТАКСИЧЕСКАЯ ОШИБКА В КОМАНДНОЙ СТРОКЕ/
+E.PARS::.ASCIZ	/ОШИБКА ПРИ РАЗБОРЕ КОМАНДНОЙ СТРОКИ/
+E.CKP::	.ASCIZ	/СДЕЛАЙТЕ ЗАДАЧУ ВЫГРУЖАЕМОЙ/
+.ENDC
+
+	.END

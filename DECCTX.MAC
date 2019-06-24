@@ -1,0 +1,552 @@
+.INCLUDE /DECDFN/
+.MODULE DECCTX,RELEASE=V05,VERSION=10,COMMENT=<ВВОД/ВЫВОД КОМАНД ДИАЛОГА>
+
+	.PSECT	CTXDAT,D,SAV
+S.SWIT:	.BLKW	1
+.REM	\
+............................................................
+
+  П/П ВВОДА КОМАНД И МЕТОК (KОНТЕКСТА ДЕКОДИРОВАНИЯ)
+
+	*DIA_FILE_VERSION - НОМЕР ВЕРСИИ ФАЙЛА ПРОТОКОЛА
+	*PROCESSOR - СЕКЦИЯ ОПРЕДЕЛЕНИЯ ТИПА ДЕКОДИРУЕМЫХ КОМАНД
+	*SEGDEF - СЕКЦИЯ ПРИНУДИТЕЛЬНОГО ОПРЕДЕЛЕНИЯ СЕГМЕНТОВ
+	*GLOBAL - СЕКЦИЯ ГЛОБАЛЬНЫХ МЕТОК
+	*SEGMENT - СЕКЦИЯ ОПРЕДЕЛЕНИЯ НОМЕРА СЕГМЕНТА
+	*NAME - СЕКЦИЯ ИМЕНИ СЕГМЕНТА
+	*LABELS - НАЧАЛО СЕКЦИИ МЕТОК
+	*COMMANDS - НАЧАЛО СЕКЦИИ КОМАНД
+	;XXXXXX - КОММЕНТАРИЙ
+	!XXXXXX - КОММЕНТАРИЙ
+............................................................\
+
+	.PSECT	DECCTX,RO,I
+GETCTX::
+	CLR	R0
+	CALL	SETSEG
+	MOV	#GETCMD,S.SWIT	; ПО УМОЛЧАНИЮ - GETCMD
+	CLR	GLBFLG
+GETLIN::
+	CALL	RD$LIN
+	MOV	#CURLIN,R0
+	TSTB	@R0
+	BNE	1$		; КОНЕЦ ФАЙЛА
+	RETURN
+1$:	CMPB	@R0,#'; 	; КОММЕНТАРИЙ?
+	BEQ	GETLIN		; ДА
+	CMPB	@R0,#'*		; КОМАНДА ПЕРЕКЛЮЧЕНИЯ?
+	BNE	SWITCH		; НЕТ
+	MOV	#DIAVTX,R5
+	CLR	R4		; SUBR.NUM
+
+4$:	MOV	R0,R1
+2$:	MOVB	(R5)+,R3	; ОЧЕРЕДНОЙ СИМВОЛ
+	BEQ	3$		; КОНЕЦ ОБРАЗЦА - СОВП.
+	CMPB	(R1)+,R3
+	BEQ	2$		; СИМВОЛ СОВП.
+5$:	TSTB	(R5)+		; ПРОПУСТИМ ДО КОНЦА
+	BNE	5$
+	INC	R4	
+	TSTB	@R5
+	BNE	4$
+	BR	FTLSN
+3$:	ASL	R4
+	MOV	GCTXL(R4),S.SWIT	; УСТАНОВИМ П/П
+	BR	GETLIN
+
+SWITCH:	CALL	@S.SWIT
+	BR	GETLIN
+
+FTLSN:	FATAL	E.SNTX
+
+............................................................
+;
+; ВЫЗОВЫ $ERROR ДЛЯ ИСКЛЮЧЕНИЯ КОНФЛИКТОВ С ПЕРЕК. ОВЕРЛЕЯМИ
+;
+............................................................
+	.PSECT	CTXERR,I,RO,SAV
+OVERSN:	ERROR	E.SNTX
+	MOV	#CURLIN,R0
+	CALL	WR$TTY
+	JMP	GETLIN
+OVERGL:	ERROR	E.GLB
+	MOV	#CURLIN,R0
+	CALL	WR$TTY
+	JMP	GETLIN
+
+	.PSECT	CTXTXT,RO,D
+
+DIAVTX:	.ASCIZ	/*DIA_FILE_VERSION/
+PRSTXT:	.ASCIZ	/*PROCESSOR/
+SGDTXT:	.ASCIZ	/*SEGDEF/
+SEGTXT:	.ASCIZ	/*SEGMENT/
+NAMTXT:	.ASCIZ	/*NAME/
+CMDTXT:	.ASCIZ	/*COMMANDS/
+GLBTXT:	.ASCIZ	/*GLOBAL/
+LABTXT:	.ASCIZ	/*LABELS/
+	.BYTE	0
+
+	.PSECT	CTXDAT,D
+GLBFLG:	.WORD	1
+GCTXL:	.WORD	GVERS
+	.WORD	GPROC
+	.WORD	GSEGD
+	.WORD	GSEGN
+	.WORD	GSGNAM
+	.WORD	GETCMD
+	.WORD	GGLOB
+	.WORD	GETLAB
+
+	.PSECT	DECCTX,RO,I
+............................................................
+;
+; П/П СЧИТЫВАНИЯ ВЕРСИИ ФАЙЛА ДИАЛОГА
+;
+............................................................
+GVERS:
+	CALL	GETNUM
+	BCS	ERRSN
+	MOV	R5,DIAVER
+	RETURN
+............................................................
+;
+; П/П СЧИТЫВАНИЯ КОНФИГУРАЦИИ ПРОЦЕССОРА
+; ЧИСЛО,РАВНОЕ PRSSWT
+;
+............................................................
+GPROC:
+	TST	CNFFLG
+	BNE	1$		; БЫЛО УКАЗАНО НОВОЕ ЗНАЧЕНИЕ КЛЮЧА
+	CALL	GETNUM
+	BCS	ERRSN
+	MOV	R5,CONFIG
+1$:	RETURN
+............................................................
+;
+; ВВОД ОПИСАТЕЛЕЙ СЕГМЕНТОВ
+;
+............................................................
+GSEGD:
+	TST	SGDSWT		; БЫЛ ВВОД С ТЕРМИНАЛА
+	BNE	3$
+	TST	SGDFLG
+	BNE	1$
+	MOV	#-1,OVRCNT
+	MOV	SP,SGDFLG	; ПОМЕТИТЬ, ЧТО ОПИСАНИЯ ВВЕДЕНЫ ИЗ ФАЙЛА
+	MOV	#SEGLST,R3
+
+1$:	INC	OVRCNT
+	MOV	#O$LEN,R2
+	CALL	GTMEML		; ВЫДЕЛИТЬ ПАМЯТЬ ПОД СЛЕД. ЭЛЕМЕНТ СПИСКА
+	MOV	R2,@R3		; ЗАПОЛНИТЬ LINK ПРЕД.
+	MOV	R2,R3
+	MOV	SEGLST,CURSEG
+	MOV	#O$LEN/2,R1	; РАЗМЕР БЛОКА СЕГМЕНТА В СЛОВАХ
+2$:	CLR	(R2)+		; ОЧИСТИТЬ БЛОК СЕГМЕНТА
+	SOB	R1,2$
+
+	CALL	GETNUM		; ВЗЯТЬ ЧИСЛО В R5
+	BCS	4$
+	TSTB	(R0)+
+	MOV	R5,O$SBLK(R3)	; SEGBLK
+	CALL	GETNUM		; ВЗЯТЬ ЧИСЛО В R5
+	BCS	4$
+	TSTB	(R0)+
+	MOV	R5,O$SBAS(R3)	; SEGBAS
+	CALL	GETNUM		; ВЗЯТЬ ЧИСЛО В R5
+	BCS	4$
+	TSTB	(R0)+
+	MOV	R5,O$LOW(R3)	; LOW
+	CALL	GETNUM		; ВЗЯТЬ ЧИСЛО В R5
+	BCS	4$
+	TSTB	(R0)+
+	MOV	R5,O$HIGH(R3)	; HIGH
+	CALL	GETNUM		; ВЗЯТЬ ЧИСЛО В R5
+	BCS	4$
+	TSTB	(R0)+
+	MOV	R5,O$LLAB(R3)	; L.LAB
+	CALL	GETNUM		; ВЗЯТЬ ЧИСЛО В R5
+	BCS	4$
+	MOV	R5,O$HLAB(R3)	; H.LAB
+3$:	RETURN
+
+4$:	FATAL	E.SNTX
+............................................................
+;
+; ВВОД НОМЕРА СЕГМЕНТА
+;
+............................................................
+GSEGN:
+	CALL	GETNUM
+	BCS	ERRSN
+	MOV	R5,R0
+	CALLR	SETSEG
+............................................................
+;
+; ВВОД ИМЕНИ СЕГМЕНТА
+;
+............................................................
+GSGNAM:
+	CALL	ASCR50
+	TST	R50NAM
+	BEQ	1$
+	MOV	R50NAM,SEGNAM
+	MOV	R50NAM+2,SEGNAM+2
+	MOV	CURSEG,R5
+	MOV	R50NAM,O$NAME(R5)
+	MOV	R50NAM+2,O$NAME+2(R5)
+1$:	RETURN
+............................................................
+;
+; П/П ВВОДА КОМАНД ИЗ ФАЙЛА
+;
+............................................................
+GETCMD:
+	CALL	GETNUM		; LC
+	BCS	ERRSN
+	MOV	R5,CMDBUF+C$LC
+	CMPB	(R0)+,#':
+	BNE	ERRSN
+	CALL	LINTRN		; ОБРАБОТАТЬ СТРОКУ
+	BCS	ERRSN
+
+	MOV	#CMDBUF,R0
+	CALLR	LOGCMD		; ЗАНЕСТИ КОМАНДУ В СПИСОК
+
+ERRSN:	TST	(SP)+
+	JMP	OVERSN
+
+............................................................
+;
+; П/П ВВОДА СПИСКА ТЕКСТОВЫХ МЕТОК ИЗ ФАЙЛА
+;
+; ФОРМАТ:
+; АДРЕС:<HT>ИМЯ
+............................................................
+GGLOB::				; ЗАНЕСТИ МЕТКУ В TXT
+GETLAB::
+	CALL	GETNUM		; ВЗЯТЬ ЧИСЛО
+	BCS	2$		; ОШИБКА
+1$:	MOVB	(R0)+,R1	; ОЧЕРЕДНОЙ СИМВОЛ
+	CMPB	R1,#40		; SP?
+	BEQ	1$
+	CMPB	R1,#11		; HT?
+	BEQ	1$
+	CMPB	R1,#':
+	BEQ	1$
+	DEC	R0
+	CALL	ASCR50
+	TST	R50NAM
+	BEQ	2$
+	MOV	R5,R0
+	CALLR	PLTXT		; ЗАНЕСТИ В СПИСОК
+2$:	TST	(SP)+
+	JMP	OVERGL
+
+............................................................
+;
+; П/П ВЫВОДА КОМАНД И МЕТОК (KОНТЕКСТА ДЕКОДИРОВАНИЯ)
+;
+;	*COMMANDS - НАЧАЛО СЕКЦИИ КОМАНД
+;	*LABELS - НАЧАЛО СЕКЦИИ МЕТОК
+;	;XXXXX - КОМАНДНАЯ СТРОКА
+............................................................
+OUTCTX::
+	MOV	#CURLIN,R2
+	MOVB	#';,(R2)+
+	MOV	#IDENT,R0
+	CALL	MOVTXT
+	CALL	WR$LIN
+
+	MOV	#CURLIN,R2
+	MOVB	#';,(R2)+
+	MOV	#CSISTR,R0
+	CALL	MOVTXT
+	CALL	WR$LIN
+
+	MOV	#CURLIN,R2	; ВЫВОД НОМЕРА ВЕРСИИ ФАЙЛА ДИАЛОГА
+	MOV	#DIAVTX,R0
+	CALL	MOVTXT
+	CALL	WR$LIN
+	MOV	#CURLIN,R2
+	MOV	DIAVER,R0
+	INC	R0		; +1 НА КАЖДОЕ ОБНОВЛЕНИЕ ФАЙЛА
+	CALL	OCONV
+	CALL	MOVTXT
+	CALL	WR$LIN
+
+	MOV	#CURLIN,R2	; ВЫВОД КОНФИГУРАЦИИ ПРОЦЕССОРА
+	MOV	#PRSTXT,R0
+	CALL	MOVTXT
+	CALL	WR$LIN
+	MOV	#CURLIN,R2
+	MOV	CONFIG,R0
+	CALL	OCONV
+	CALL	MOVTXT
+	CALL	WR$LIN
+
+	TST	SGDFLG		; ОПИСАТЕЛИ ПРИНУДИТЕЛЬНЫЕ?
+	BEQ	1$		; НЕТ
+	MOV	#CURLIN,R2	; ВЫВОД ОПИСАТЕЛЕЙ СЕГМЕНТОВ
+	MOV	#SGDTXT,R0
+	CALL	MOVTXT
+	CALL	WR$LIN
+	CALL	OUTSGD
+
+1$:	CLR	-(SP)
+
+2$:	MOV	@SP,R0
+	CALL	SETSEG
+
+	MOV	#CURLIN,R2	; ВЫВОД НОМЕРА СЕГМЕНТА
+	MOV	#SEGTXT,R0
+	CALL	MOVTXT
+	CALL	WR$LIN
+	MOV	@SP,R0
+	MOV	#CURLIN,R2
+	CALL	OCONV
+	CALL	MOVTXT
+	CALL	WR$LIN
+
+	TST	SEGNAM
+	BEQ	3$
+	MOV	#CURLIN,R2	; ВЫВОД ИМЕНИ СЕГМЕНТА
+	MOV	#NAMTXT,R0
+	CALL	MOVTXT
+	CALL	WR$LIN
+	MOV	#CURLIN,R0
+	MOV	#SEGNAM,R1
+	CALL	R50ASC
+	MOV	R0,R2
+	CALL	WR$LIN
+
+3$:	MOV	#CURLIN,R2	; ВЫВОД СПИСКА КОМАНД
+	MOV	#CMDTXT,R0
+	CALL	MOVTXT
+	CALL	WR$LIN
+	CALL	OUTCMD
+
+	MOV	#CURLIN,R2	; ВЫВОД ГЛОБАЛЬНЫХ МЕТОК
+	MOV	#GLBTXT,R0
+	CALL	MOVTXT
+	CALL	WR$LIN
+	CALL	OGLOB
+
+	MOV	#CURLIN,R2	; ВЫВОД СПИСКА ТЕКСТОВЫХ МЕТОК
+	MOV	#LABTXT,R0
+	CALL	MOVTXT
+	CALL	WR$LIN
+	CALL	OUTLAB
+
+	INC	@SP
+	CMP	@SP,OVRCNT
+	BLE	2$
+	TST	(SP)+
+	RETURN
+............................................................
+;
+; П/П ВЫВОДА СПИСКОВ КОМАНД
+;
+............................................................
+OUTCMD::
+	MOV	#S.C.SV,R3
+	BR	2$
+1$:	CALL	FORMLN		; ВЫВЕСТИ КОМАНДУ В CURLIN
+2$:	MOV	@R3,R3
+	BNE	1$		; ПРОД. ВЫВОД, ЕСЛИ ЕСТЬ ЭЛЕМЕНТ
+
+	MOV	#M.C.SV,R3
+	BR	4$
+3$:	CALL	FORMLN		; ВЫВЕСТИ КОМАНДУ В CURLIN
+4$:	MOV	@R3,R3
+	BNE	3$		; ПРОД. ВЫВОД, ЕСЛИ ЕСТЬ ЭЛЕМЕНТ
+	RETURN			; КОНЕЦ СПИСКА
+............................................................
+;
+; П/П ВЫВОДА ТЕКСТОВЫХ МЕТОК В ФАЙЛ
+;
+............................................................
+OGLOB::
+	MOV	#GLBPNT,R5
+	BR	OUTL
+OUTLAB::
+	MOV	#TXTPNT,R5
+OUTL:	MOV	@R5,R5
+	BEQ	9$
+	MOV	#CURLIN,R2
+	MOV	2(R5),R0
+	MOV	R5,R1
+	CMP	(R1)+,(R1)+
+	CALL	OCONV
+	CALL	MOVTXT
+	MOVB	#':,(R2)+
+	MOVB	#11,(R2)+
+	MOV	R2,R0
+	CALL	R50ASC
+	MOV	R0,R2
+	CALL	DELSP
+	CALL	WR$LIN
+	BR	OUTL
+9$:	RETURN
+............................................................
+;
+; П/П ОФОРМЛЕНИЯ И ВЫВОДА КОМАНДАНОЙ СТРОКИ
+; В R3 - АДРЕС ЭЛЕМЕНТА СПИСКА
+;
+............................................................
+FORMLN:
+	JSR	R1,$SAVE4
+	MOV	#CURLIN,R2
+	TST	(R3)+		; ПРОПУСТИТЬ LINK
+	MOV	(R3)+,R0	; LC
+	CALL	OCONV
+	CALL	MOVTXT
+	MOVB	#':,(R2)+
+	MOVB	(R3)+,R1	; CMD
+	CMPB	R1,#-1
+	BEQ	7$		; КОМАНДА NOP
+	MOV	#C.MN.T,R0
+1$:	CMPB	(R0)+,R1
+	BEQ	3$
+2$:	TSTB	(R0)+
+	BNE	2$
+	BR	1$
+3$:	CALL	MOVTXT		; ПЕРЕСЛАТЬ МНЕМОНИКУ КОМАНДЫ
+	ASL	R1
+	MOV	CMDFLG(R1),R4	; ФЛАГИ КОМАНДЫ
+	BIT	#M.PARM,R4
+	BNE	8$		; КОМАНДЫ С СИМВОЛИЧЕСКИМИ ПАРАМЕТРАМИ
+	BIT	#M.CMT,R4	; КОМАНДА КОММЕНТАРИЯ?
+	BNE	6$		; ДА
+	MOVB	(R3)+,R1	; ЧИСЛО ДОП. АРГУМЕНТОВ
+	BEQ	5$		; АРГУМЕНТОВ НЕТ - ВЫВЕСТИ КОМАНДУ
+4$:	MOVB	#':,(R2)+
+	MOV	(R3)+,R0
+	CALL	OCONV
+	CALL	MOVTXT
+	SOB	R1,4$
+5$:	CALLR	WR$LIN		; ВЫВЕСТИ
+; ВЫВОД СТРОКИ - КОММЕНТАРИЯ
+6$:	MOVB	(R3)+,R1	; ЧИСЛО ДОП. АРГУМЕНТОВ
+	BEQ	7$		; АРГУМЕНТОВ НЕТ - ВОЗВРАТ
+	MOV	R3,R0
+	CALL	MOVTXT
+	CALLR	WR$LIN		; ВЫВЕСТИ СТРОКУ
+7$:	RETURN
+; ВЫВОД СТРОКИ С СИМВ. АРГУМЕНТАМИ
+8$:	MOVB	(R3)+,R1	; ЧИСЛО ДОП. АРГУМЕНТОВ
+	BEQ	5$
+	DEC	R4
+9$:	MOV	R4,R0		; АДРЕС ТАБЛИЦЫ
+10$:	TST	4(R0)
+	BMI	13$		; НЕ НАШЛИ ПАРАМЕТР - ОШИБКА
+	CMP	@R3,@R0		; ЗНАЧЕНИЯ СОВП?
+	BEQ	12$		; ДА, НАШЛИ
+	CMP	(R0)+,(R0)+	; ПРОПУСТИТЬ ЭЛЕМЕНТ ТАБЛИЦЫ
+11$:	TSTB	(R0)+
+	BNE	11$
+	INC	R0
+	BIC	#1,R0
+	BR	10$		; ПРОДОЛЖИМ ПОИСК
+12$:	MOVB	#':,(R2)+	; ОТДЕЛИТЬ
+	CMP	(R0)+,(R0)+
+	CALL	MOVTXT		; ПЕРЕСЛАТЬ ПАРАМЕТР
+	TST	(R3)+		; СЛЕД АРГ.
+	SOB	R1,9$
+	CALLR	WR$LIN
+13$:	ERROR	E.SNTX
+	RETURN
+............................................................
+;
+; П/П ВЫВОДА СПИСКОВ ОПИСАТЕЛЕЙ СЕГМЕНТОВ
+;
+............................................................
+OUTSGD:
+	MOV	SEGLST,R3
+
+1$:	MOV	#CURLIN,R2
+
+	MOV	O$SBLK(R3),R0	; SEGBLK
+	CALL	OCONV
+	CALL	MOVTXT
+	MOVB	#':,(R2)+
+	MOV	O$SBAS(R3),R0	; SEGBAS
+	CALL	OCONV
+	CALL	MOVTXT
+	MOVB	#':,(R2)+
+	MOV	O$LOW(R3),R0	; LOW
+	CALL	OCONV
+	CALL	MOVTXT
+	MOVB	#':,(R2)+
+	MOV	O$HIGH(R3),R0	; HIGH
+	CALL	OCONV
+	CALL	MOVTXT
+	MOVB	#':,(R2)+
+	MOV	O$LLAB(R3),R0	; L.LAB
+	CALL	OCONV
+	CALL	MOVTXT
+	MOVB	#':,(R2)+
+	MOV	O$HLAB(R3),R0	; H.LAB
+	CALL	OCONV
+	CALL	MOVTXT
+	CALL	WR$LIN
+	MOV	@R3,R3
+	BNE	1$
+
+	RETURN			; КОНЕЦ СПИСКА
+............................................................
+;
+; П/П СЧИТЫВАНИЯ ОПИСАТЕЛЕЙ СЕГМЕНТОВ С ТЕРМИНАЛА
+;
+............................................................
+DEFSEG::
+	MOV	#SEGLST,R3
+	MOV	#-1,OVRCNT
+1$:	MOV	#MS.PRM,R0
+	CALL	RD$PRM		; ВВЕСТИ СТРОКУ С CMDLIN С ПОДСКАЗКОЙ
+	MOV	#CMDLIN,R0
+	TSTB	@R0		; ПУСТАЯ СТРОКА?
+	BEQ	10$		; ДА, ЗАКОНЧИТЬ ОПИСАНИЕ СЕГМЕНТОВ
+
+	INC	OVRCNT
+	MOV	#O$LEN,R2
+	CALL	GTMEML		; ВЫДЕЛИТЬ ПАМЯТЬ ПОД СЛЕД. ЭЛЕМЕНТ СПИСКА
+	MOV	R2,@R3		; ЗАПОЛНИТЬ LINK ПРЕД.
+	MOV	R2,R3
+	MOV	#O$LEN/2,R1	; РАЗМЕР БЛОКА СЕГМЕНТА В СЛОВАХ
+2$:	CLR	(R2)+		; ОЧИСТИТЬ БЛОК СЕГМЕНТА
+	SOB	R1,2$
+
+	CALL	GETNUM		; ВЗЯТЬ ЧИСЛО В R5
+	BCS	3$
+	TSTB	(R0)+
+	MOV	R5,O$SBLK(R3)	; SEGBLK
+	CALL	GETNUM		; ВЗЯТЬ ЧИСЛО В R5
+	BCS	3$
+	TSTB	(R0)+
+	MOV	R5,O$SBAS(R3)	; SEGBAS
+	CALL	GETNUM		; ВЗЯТЬ ЧИСЛО В R5
+	BCS	3$
+	TSTB	(R0)+
+	MOV	R5,O$LOW(R3)	; LOW
+	CALL	GETNUM		; ВЗЯТЬ ЧИСЛО В R5
+	BCS	3$
+	TSTB	(R0)+
+	MOV	R5,O$HIGH(R3)	; HIGH
+	CALL	GETNUM		; ВЗЯТЬ ЧИСЛО В R5
+	BCS	3$
+	TSTB	(R0)+
+	MOV	R5,O$LLAB(R3)	; L.LAB
+	CALL	GETNUM		; ВЗЯТЬ ЧИСЛО В R5
+	BCS	3$
+	MOV	R5,O$HLAB(R3)	; H.LAB
+	BR	1$		; ПОВТОРИТЬ СЧИТЫВАНИЕ ОПИСАТЕЛЯ
+10$:	RETURN
+
+3$:	FATAL	E.SNTX
+
+	.PSECT	CTXTXT,RO,D
+MS.PRM:	.ASCII	/БЛОК:БАЗА:НАЧАЛО:КОНЕЦ:НИЖНИЙ:ВЕРХНИЙ > /<200>
+	.EVEN
+
+	.END
